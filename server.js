@@ -87,3 +87,5 @@ app.listen(PORT, () => {
   console.log('💡 Press Ctrl+C to stop the server');
   console.log('');
 });
+// Export for Vercel
+export default app;
