@@ -1,13 +1,11 @@
 import { google } from 'googleapis';
-import fs from 'fs';
 
 const SHEET_ID = '16DKI_uUTjy5mGzP7XgSnfoLqqlrOZXBJ9ezhaQ6DNV8';
-const CREDENTIALS_PATH = './google-credentials.json';
 
 async function saveSignup(email, phone, interest, source = 'StockMarketToday.com') {
   try {
-    // Load credentials
-    const credentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH));
+    // Read credentials from environment variable
+    const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
     
     // Authenticate
     const auth = new google.auth.GoogleAuth({
