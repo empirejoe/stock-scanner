@@ -28,19 +28,19 @@ function generateChartData(changePercent) {
 
 async function fetchMarketMovers() {
   try {
-    console.log('🔍 Fetching from Alpha Vantage...');
+    console.log('Fetching from Alpha Vantage...');
     const url = `https://www.alphavantage.co/query?function=TOP_GAINERS_LOSERS&apikey=${ALPHA_VANTAGE_KEY}`;
     
     const response = await fetch(url);
     const data = await response.json();
     
     if (data.Note) {
-      console.error('⚠️ API LIMIT:', data.Note);
+      console.error('API LIMIT:', data.Note);
       return null;
     }
     
     if (data['Error Message']) {
-      console.error('❌ ERROR:', data['Error Message']);
+      console.error('ERROR:', data['Error Message']);
       return null;
     }
     
@@ -61,15 +61,15 @@ async function fetchMarketMovers() {
         chartData: generateChartData(parseFloat(stock.change_percentage.replace('%', '')))
       }));
 
-      console.log(`✅ Top Gainer: ${gainers[0]?.ticker} +${gainers[0]?.change}%`);
-      console.log(`❄️ Top Loser: ${losers[0]?.ticker} ${losers[0]?.change}%`);
+      console.log('Top Gainer:', gainers[0]?.ticker, '+' + gainers[0]?.change + '%');
+      console.log('Top Loser:', losers[0]?.ticker, losers[0]?.change + '%');
 
       return { gainers, losers };
     }
     
     return null;
   } catch (error) {
-    console.error('💥 Error:', error);
+    console.error('Error:', error);
     return null;
   }
 }
@@ -200,23 +200,7 @@ app.get('/', (req, res) => {
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log('🚀 Stock Market API Started!');
-  console.log(`📡 Port: ${PORT}`);
+  console.log('Stock Market API Started on port', PORT);
 });
 
 module.exports = app;
-```
-
-### **4. Scroll down and click "Commit changes"**
-- Add commit message: "Add Alpha Vantage API for real market data"
-- Click green "Commit changes" button
-
-### **5. Render Will Auto-Deploy**
-- Go to https://dashboard.render.com
-- Watch your service deploy (takes 2-3 minutes)
-- Look for "Live" status
-
-### **6. Test Again**
-Open in browser:
-```
-https://stock-scanner-za3b.onrender.com/health
