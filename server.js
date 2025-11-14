@@ -168,8 +168,14 @@ Format as JSON:
       messages: [{ role: 'user', content: prompt }]
     });
 
-    const articleData = JSON.parse(message.content[0].text);
-    
+// Extract JSON from markdown code blocks if present
+let responseText = message.content[0].text;
+if (responseText.includes('```json')) {
+  responseText = responseText.split('```json')[1].split('```')[0].trim();
+} else if (responseText.includes('```')) {
+  responseText = responseText.split('```')[1].split('```')[0].trim();
+}
+const articleData = JSON.parse(responseText);    
     return {
       ...articleData,
       slug: createSlug(articleData.title),
@@ -237,7 +243,14 @@ Format as JSON:
       messages: [{ role: 'user', content: prompt }]
     });
 
-    const articleData = JSON.parse(message.content[0].text);
+// Extract JSON from markdown code blocks if present
+let responseText = message.content[0].text;
+if (responseText.includes('```json')) {
+  responseText = responseText.split('```json')[1].split('```')[0].trim();
+} else if (responseText.includes('```')) {
+  responseText = responseText.split('```')[1].split('```')[0].trim();
+}
+const articleData = JSON.parse(responseText);
     
     return {
       ...articleData,
