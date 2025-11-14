@@ -106,14 +106,12 @@ function generateChartData(changePercent) {
   return data;
 }
 
-// Fetch market movers from Polygon - TODAY'S SESSION DATA
+// Fetch market movers from Polygon - TODAY'S DATA vs YESTERDAY'S CLOSE
 async function fetchMarketMovers() {
   try {
     console.log('📊 Fetching TODAY\'S NYSE/NASDAQ data from Polygon...');
     
-    // Get TODAY's date
     const today = new Date().toISOString().split('T')[0];
-    
     const url = `https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/${today}?adjusted=true&apiKey=${POLYGON_API_KEY}`;
     
     const response = await fetch(url);
@@ -121,21 +119,22 @@ async function fetchMarketMovers() {
     
     if (data.status !== 'OK' || !data.results) {
       console.error('Polygon API error:', data);
-      return null;
+      return { gainers: [], losers: [] };
     }
     
-    console.log(`✅ Received ${data.results.length} stocks from Polygon (TODAY'S DATA)`);
+    console.log(`✅ Received ${data.results.length} stocks from Polygon (${today})`);
     
     const stocks = data.results
       .filter(stock => 
-        stock.o > 0 && 
         stock.c > 0 && 
-        stock.v >= 500000 && // 500k+ volume TODAY
+        stock.pc > 0 && // Previous close must exist
+        stock.v >= 500000 &&
         !stock.T.includes('.') &&
         stock.T.length <= 5
       )
       .map(stock => {
-        const changePercent = ((stock.c - stock.pc) / stock.pc) * 100; // c = current, pc = previous close
+        // CRITICAL: Compare TODAY's price (c) to YESTERDAY's close (pc)
+        const changePercent = ((stock.c - stock.pc) / stock.pc) * 100;
         return {
           ticker: stock.T,
           name: stock.T,
@@ -146,30 +145,33 @@ async function fetchMarketMovers() {
         };
       });
     
+    console.log(`📊 Filtered to ${stocks.length} stocks with 500k+ volume`);
+    
     const gainers = stocks
-      .filter(s => s.change >= 28) // 28%+ UP
+      .filter(s => s.change >= 28)
       .sort((a, b) => b.change - a.change)
       .slice(0, 20);
     
     const losers = stocks
-      .filter(s => s.change <= -28) // 28%+ DOWN
+      .filter(s => s.change <= -28)
       .sort((a, b) => a.change - b.change)
       .slice(0, 20);
     
     console.log(`🚀 Found ${gainers.length} gainers with 28%+ moves and 500k+ volume`);
-    console.log(`📉 Found ${losers.length} losers with 28%+ moves and 500k+ volume`);
+    console.log(`📉 Found ${losers.length} losers with 28%- moves and 500k+ volume`);
     
     if (gainers.length > 0) {
-      console.log(`🚀 Top Gainer: ${gainers[0]?.ticker} +${gainers[0]?.change.toFixed(2)}%`);
+      console.log(`   Top Gainer: ${gainers[0].ticker} +${gainers[0].change.toFixed(2)}% @ $${gainers[0].price.toFixed(2)}`);
     }
     if (losers.length > 0) {
-      console.log(`📉 Top Loser: ${losers[0]?.ticker} ${losers[0]?.change.toFixed(2)}%`);
+      console.log(`   Top Loser: ${losers[0].ticker} ${losers[0].change.toFixed(2)}% @ $${losers[0].price.toFixed(2)}`);
     }
     
     return { gainers, losers };
+    
   } catch (error) {
-    console.error('Error fetching from Polygon:', error);
-    return null;
+    console.error('💥 Error fetching from Polygon:', error);
+    return { gainers: [], losers: [] };
   }
 }
 
