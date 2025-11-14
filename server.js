@@ -12,6 +12,7 @@ const POLYGON_API_KEY = 't_RrZpaMlwv9kmfeYM0I0x71Wn_DmlOH';
 const FINNHUB_API_KEY = 'd3n5abhr01qk6515r7fgd3n5abhr01qk6515r7g0';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const MONGODB_URI = process.env.MONGODB_URI;
+const ALPHA_VANTAGE_KEY = 'PXHA4QFY5C2PEB4N';
 
 const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
