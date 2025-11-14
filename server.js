@@ -194,32 +194,37 @@ function generateChartData(changePercent) {
   return data;
 }
 
-// Fetch market movers from Finnhub - ALL NYSE/NASDAQ, NO LIMITS
+// Fetch market movers from Finnhub - WITH SMART FILTERS
 async function fetchMarketMovers() {
   try {
-    console.log('📊 Fetching ALL NYSE/NASDAQ stocks from Finnhub...');
+    console.log('📊 Fetching NYSE/NASDAQ stocks from Finnhub with filters...');
     
     // Step 1: Get all US stock symbols
     const symbolsUrl = `https://finnhub.io/api/v1/stock/symbol?exchange=US&token=${FINNHUB_API_KEY}`;
     const symbolsResponse = await fetch(symbolsUrl);
     const allSymbols = await symbolsResponse.json();
     
-    // Step 2: Filter for NYSE and NASDAQ only - LESS RESTRICTIVE
+    // Step 2: STRICT filtering for NYSE/NASDAQ
     const nyseNasdaqStocks = allSymbols.filter(stock => 
-      (stock.mic === 'XNYS' || stock.mic === 'XNAS') && // NYSE or NASDAQ only
+      (stock.mic === 'XNYS' || stock.mic === 'XNAS') && // NYSE or NASDAQ ONLY
+      stock.type === 'Common Stock' && // Common stocks only
       !stock.symbol.includes('.') && // No class shares
-      stock.symbol.length <= 5 // Reasonable ticker length
+      !stock.symbol.includes('-') && // No warrants/units
+      !stock.symbol.includes('^') && // No indices
+      !stock.symbol.includes('$') && // No special symbols
+      stock.symbol.length >= 1 && 
+      stock.symbol.length <= 5 && // Normal ticker length
+      !/[^A-Z]/.test(stock.symbol) // Only letters, no numbers
     );
     
-    console.log(`✅ Found ${nyseNasdaqStocks.length} NYSE/NASDAQ stocks`);
+    console.log(`✅ Found ${nyseNasdaqStocks.length} filtered NYSE/NASDAQ stocks`);
     
-    // Step 3: Check ALL of them (not a sample)
     const stockData = [];
-    const batchSize = 50; // Bigger batches
+    const batchSize = 50;
     
-    console.log(`🔍 Analyzing ALL ${nyseNasdaqStocks.length} stocks...`);
+    console.log(`🔍 Analyzing stocks with volume 500k+ filter...`);
     
-    // Step 4: Fetch quotes in batches
+    // Step 3: Fetch quotes in batches
     for (let i = 0; i < nyseNasdaqStocks.length; i += batchSize) {
       const batch = nyseNasdaqStocks.slice(i, i + batchSize);
       
@@ -229,17 +234,26 @@ async function fetchMarketMovers() {
           const response = await fetch(url);
           const quote = await response.json();
           
-          // REMOVED ALL RESTRICTIVE FILTERS - accept any valid quote
           if (quote.c && quote.pc && quote.c > 0 && quote.pc > 0) {
             const change = ((quote.c - quote.pc) / quote.pc) * 100;
-            return {
-              ticker: stock.symbol,
-              name: stock.description || stock.symbol,
-              price: quote.c,
-              change: change,
-              volume: quote.v || 0,
-              chartData: generateChartData(change)
-            };
+            const volume = quote.v || 0;
+            
+            // SMART FILTERS:
+            if (
+              volume >= 500000 && // 500k+ volume
+              quote.c >= 1 && // At least $1
+              quote.c <= 10000 && // Under $10k (exclude anomalies)
+              Math.abs(change) >= 28 // At least 28% move (focuses on real movers)
+            ) {
+              return {
+                ticker: stock.symbol,
+                name: stock.description || stock.symbol,
+                price: quote.c,
+                change: change,
+                volume: volume,
+                chartData: generateChartData(change)
+              };
+            }
           }
         } catch (err) {
           // Skip on error
@@ -250,21 +264,41 @@ async function fetchMarketMovers() {
       const results = await Promise.all(promises);
       stockData.push(...results.filter(r => r !== null));
       
-      // Progress log every 500 stocks
+      // Progress log
       if ((i + batchSize) % 500 === 0) {
         console.log(`  📊 Processed ${Math.min(i + batchSize, nyseNasdaqStocks.length)}/${nyseNasdaqStocks.length} stocks...`);
       }
       
-      // Delay to respect 60/min rate limit
-      if (i + batchSize < nyseNasdaqStocks.length) {
-        await new Promise(resolve => setTimeout(resolve, 60)); // 50ms delay = ~1200 requests/min, well under limit
-      }
+      await new Promise(resolve => setTimeout(resolve, 60));
     }
     
+    console.log(`✅ Found ${stockData.length} stocks matching all filters`);
+    
     if (stockData.length === 0) {
-      console.error('❌ No valid stock data received from Finnhub');
+      console.error('❌ No stocks met the filter criteria');
       return null;
     }
+    
+    // Get top 20 gainers and losers
+    const gainers = stockData
+      .filter(s => s.change > 0)
+      .sort((a, b) => b.change - a.change)
+      .slice(0, 20);
+    
+    const losers = stockData
+      .filter(s => s.change < 0)
+      .sort((a, b) => a.change - b.change)
+      .slice(0, 20);
+    
+    console.log(`🚀 Top Gainer: ${gainers[0]?.ticker} +${gainers[0]?.change.toFixed(2)}% @ $${gainers[0]?.price.toFixed(2)} (Vol: ${(gainers[0]?.volume / 1000000).toFixed(1)}M)`);
+    console.log(`📉 Top Loser: ${losers[0]?.ticker} ${losers[0]?.change.toFixed(2)}% @ $${losers[0]?.price.toFixed(2)} (Vol: ${(losers[0]?.volume / 1000000).toFixed(1)}M)`);
+    
+    return { gainers, losers };
+  } catch (error) {
+    console.error('💥 Error fetching from Finnhub:', error.message);
+    return null;
+  }
+}
     
     // Get top 20 gainers and losers
     const gainers = stockData
