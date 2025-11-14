@@ -96,3 +96,541 @@ function generateChartData(changePercent) {
   const data = [];
   const startValue = 10;
   const endValue = startValue + (startValue * changePercent / 100);
+  
+  for (let i = 0; i < points; i++) {
+    const progress = i / (points - 1);
+    const value = startValue + (endValue - startValue) * progress * (0.8 + Math.random() * 0.4);
+    data.push(Math.max(value, 1));
+  }
+  
+  return data;
+}
+
+// Fetch market movers from Finnhub - WITH EXTREME MOVER FILTERS
+async function fetchMarketMovers() {
+  try {
+    console.log('📊 Fetching NYSE/NASDAQ extreme movers from Finnhub...');
+    
+    const symbolsUrl = `https://finnhub.io/api/v1/stock/symbol?exchange=US&token=${FINNHUB_API_KEY}`;
+    const symbolsResponse = await fetch(symbolsUrl);
+    const allSymbols = await symbolsResponse.json();
+    
+    const nyseNasdaqStocks = allSymbols.filter(stock => 
+      (stock.mic === 'XNYS' || stock.mic === 'XNAS') &&
+      stock.type === 'Common Stock' &&
+      !stock.symbol.includes('.') &&
+      !stock.symbol.includes('-') &&
+      !stock.symbol.includes('^') &&
+      !stock.symbol.includes('$') &&
+      stock.symbol.length >= 1 && 
+      stock.symbol.length <= 5 &&
+      !/[^A-Z]/.test(stock.symbol)
+    );
+    
+    console.log(`✅ Found ${nyseNasdaqStocks.length} filtered NYSE/NASDAQ stocks`);
+    
+    const stockData = [];
+    const batchSize = 50;
+    
+    console.log(`🔍 Scanning for 28%+ movers with 500k+ volume...`);
+    
+    for (let i = 0; i < nyseNasdaqStocks.length; i += batchSize) {
+      const batch = nyseNasdaqStocks.slice(i, i + batchSize);
+      
+      const promises = batch.map(async (stock) => {
+        try {
+          const url = `https://finnhub.io/api/v1/quote?symbol=${stock.symbol}&token=${FINNHUB_API_KEY}`;
+          const response = await fetch(url);
+          const quote = await response.json();
+          
+          if (quote.c && quote.pc && quote.c > 0 && quote.pc > 0) {
+            const change = ((quote.c - quote.pc) / quote.pc) * 100;
+            const volume = quote.v || 0;
+            
+            if (
+              volume >= 500000 &&
+              quote.c >= 1 &&
+              quote.c <= 10000 &&
+              Math.abs(change) >= 28
+            ) {
+              return {
+                ticker: stock.symbol,
+                name: stock.description || stock.symbol,
+                price: quote.c,
+                change: change,
+                volume: volume,
+                chartData: generateChartData(change)
+              };
+            }
+          }
+        } catch (err) {
+          // Skip
+        }
+        return null;
+      });
+      
+      const results = await Promise.all(promises);
+      stockData.push(...results.filter(r => r !== null));
+      
+      if ((i + batchSize) % 500 === 0) {
+        console.log(`  📊 Scanned ${Math.min(i + batchSize, nyseNasdaqStocks.length)}/${nyseNasdaqStocks.length} stocks...`);
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 60));
+    }
+    
+    console.log(`✅ Found ${stockData.length} stocks with 28%+ moves and 500k+ volume`);
+    
+    if (stockData.length === 0) {
+      console.warn('⚠️ No stocks met extreme mover criteria (28%+, 500k+ vol)');
+      return null;
+    }
+    
+    const gainers = stockData
+      .filter(s => s.change > 0)
+      .sort((a, b) => b.change - a.change)
+      .slice(0, 20);
+    
+    const losers = stockData
+      .filter(s => s.change < 0)
+      .sort((a, b) => a.change - b.change)
+      .slice(0, 20);
+    
+    console.log(`🚀 Top Gainer: ${gainers[0]?.ticker} +${gainers[0]?.change.toFixed(2)}% @ $${gainers[0]?.price.toFixed(2)} (Vol: ${(gainers[0]?.volume / 1000000).toFixed(1)}M)`);
+    console.log(`📉 Top Loser: ${losers[0]?.ticker} ${losers[0]?.change.toFixed(2)}% @ $${losers[0]?.price.toFixed(2)} (Vol: ${(losers[0]?.volume / 1000000).toFixed(1)}M)`);
+    
+    return { gainers, losers };
+  } catch (error) {
+    console.error('💥 Error fetching from Finnhub:', error.message);
+    return null;
+  }
+}
+
+function createSlug(title) {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+async function generateDailyArticle(marketData) {
+  try {
+    const { gainers, losers, sentiment } = marketData;
+    const topGainer = gainers[0];
+    const topLoser = losers[0];
+    
+    const prompt = `You are a professional financial journalist writing for StockMarketToday.com.
+
+Write an SEO-optimized blog article about today's extreme stock market movers using this REAL data:
+
+**Market Sentiment:** ${sentiment.text} (SPY: ${sentiment.spyChange}%)
+**Top Gainer:** ${topGainer.ticker} +${topGainer.change.toFixed(2)}% at $${topGainer.price.toFixed(2)}
+**Top Loser:** ${topLoser.ticker} ${topLoser.change.toFixed(2)}% at $${topLoser.price.toFixed(2)}
+
+**Additional Extreme Movers:**
+${gainers.slice(1, 5).map(s => `- ${s.ticker}: +${s.change.toFixed(2)}%`).join('\n')}
+${losers.slice(1, 3).map(s => `- ${s.ticker}: ${s.change.toFixed(2)}%`).join('\n')}
+
+Write a detailed article (600-800 words) that:
+1. Has a compelling, SEO-friendly headline
+2. Opens with a strong summary paragraph
+3. Analyzes what's driving these extreme movements
+4. Provides actionable insights for retail investors
+5. Discusses sector trends and broader market context
+6. Includes a forward-looking conclusion
+7. **CRITICAL: Format ALL ticker symbols as cashtags (e.g., $NVDA, $TSLA, $AAPL, $SPY)**
+
+Format as JSON:
+{
+  "title": "SEO headline with keywords",
+  "excerpt": "Compelling 2-3 sentence summary",
+  "content": "Full HTML article with <h2>, <h3>, <p>, <strong> tags. Use $TICKER format.",
+  "category": "Market Analysis",
+  "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
+  "metaDescription": "155-character SEO description"
+}`;
+
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 3000,
+      messages: [{ role: 'user', content: prompt }]
+    });
+
+    let responseText = message.content[0].text;
+    if (responseText.includes('```json')) {
+      responseText = responseText.split('```json')[1].split('```')[0].trim();
+    } else if (responseText.includes('```')) {
+      responseText = responseText.split('```')[1].split('```')[0].trim();
+    }
+    const articleData = JSON.parse(responseText);
+    
+    return {
+      ...articleData,
+      slug: createSlug(articleData.title),
+      author: 'Stock Market Today Editorial Team',
+      articleType: 'daily',
+      image: getRandomStockImage(),
+      readTime: '6 min read',
+      publishedAt: new Date()
+    };
+  } catch (error) {
+    console.error('Error generating daily article:', error);
+    return null;
+  }
+}
+
+async function generateEvergreenArticle() {
+  try {
+    const evergreenTopics = [
+      'Complete Guide to Understanding Stock Market Indicators for Beginners',
+      'How to Build a Diversified Investment Portfolio: Step-by-Step Strategy',
+      'Technical Analysis 101: Essential Chart Patterns Every Trader Should Know',
+      'Value Investing vs Growth Investing: Which Strategy is Right for You?',
+      'Understanding Market Volatility: How to Protect Your Portfolio'
+    ];
+
+    const topic = evergreenTopics[Math.floor(Math.random() * evergreenTopics.length)];
+    
+    const prompt = `Write an in-depth, SEO-optimized educational article about: "${topic}"
+
+Requirements:
+1. Write 1000-1500 words
+2. Structure with clear H2 and H3 headings
+3. Include specific examples and actionable advice
+4. **IMPORTANT: Format any stock ticker symbols as cashtags (e.g., $SPY, $QQQ, $AAPL)**
+
+Format as JSON:
+{
+  "title": "SEO-optimized title",
+  "excerpt": "Compelling 3-sentence summary",
+  "content": "Full HTML article with <h2>, <h3>, <p>, <ul>, <li>, <strong> tags. Use $TICKER format.",
+  "category": "Educational",
+  "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
+  "metaDescription": "155-character SEO description"
+}`;
+
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4000,
+      messages: [{ role: 'user', content: prompt }]
+    });
+
+    let responseText = message.content[0].text;
+    if (responseText.includes('```json')) {
+      responseText = responseText.split('```json')[1].split('```')[0].trim();
+    } else if (responseText.includes('```')) {
+      responseText = responseText.split('```')[1].split('```')[0].trim();
+    }
+    const articleData = JSON.parse(responseText);
+    
+    return {
+      ...articleData,
+      slug: createSlug(articleData.title),
+      author: 'Stock Market Today Editorial Team',
+      articleType: 'evergreen',
+      image: getRandomStockImage(),
+      readTime: '10 min read',
+      publishedAt: new Date()
+    };
+  } catch (error) {
+    console.error('Error generating evergreen article:', error);
+    return null;
+  }
+}
+
+async function saveArticle(articleData) {
+  try {
+    const article = new Article(articleData);
+    await article.save();
+    console.log(`✅ Saved article: "${articleData.title}"`);
+    return article;
+  } catch (error) {
+    if (error.code === 11000) {
+      console.log(`⚠️ Article already exists`);
+    } else {
+      console.error('Error saving article:', error);
+    }
+    return null;
+  }
+}
+
+async function generateDailyArticles() {
+  try {
+    console.log('🤖 Generating daily market articles...');
+    
+    const marketData = await fetchMarketMovers();
+    if (!marketData) {
+      console.error('No market data available');
+      return;
+    }
+
+    const spyResponse = await fetch(`https://finnhub.io/api/v1/quote?symbol=SPY&token=${FINNHUB_API_KEY}`);
+    const spyData = await spyResponse.json();
+    
+    const spyChange = spyData.dp || 0;
+    let sentiment = spyChange > 1 ? 'Bullish' : spyChange < -1 ? 'Bearish' : 'Mixed';
+
+    const fullMarketData = {
+      gainers: marketData.gainers,
+      losers: marketData.losers,
+      sentiment: { text: sentiment, spyChange: spyChange.toFixed(2) }
+    };
+
+    for (let i = 0; i < 2; i++) {
+      const article = await generateDailyArticle(fullMarketData);
+      if (article) {
+        await saveArticle(article);
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+    }
+    
+    console.log('✅ Daily articles generation complete');
+  } catch (error) {
+    console.error('Error generating daily articles:', error);
+  }
+}
+
+async function generateEvergreenContent() {
+  try {
+    console.log('📚 Generating evergreen article...');
+    const article = await generateEvergreenArticle();
+    if (article) {
+      await saveArticle(article);
+      console.log('✅ Evergreen article generated');
+    }
+  } catch (error) {
+    console.error('Error generating evergreen article:', error);
+  }
+}
+
+function scheduleArticleGeneration() {
+  let lastDailyGeneration = null;
+  let evergreenCount = 0;
+  
+  setInterval(() => {
+    if (!isMarketOpen()) return;
+    
+    const now = new Date();
+    const hour = now.getHours();
+    const minute = now.getMinutes();
+    const dayOfWeek = now.getDay();
+    
+    const dailyTimes = [10, 14];
+    if (dailyTimes.includes(hour) && minute === 0) {
+      const today = now.toDateString();
+      if (lastDailyGeneration !== today + hour) {
+        console.log(`⏰ Scheduled daily generation at ${hour}:00`);
+        generateDailyArticles();
+        lastDailyGeneration = today + hour;
+      }
+    }
+    
+    if ((dayOfWeek === 1 || dayOfWeek === 4) && hour === 9 && minute === 0) {
+      const weekKey = `${now.getFullYear()}-W${Math.ceil(now.getDate() / 7)}-${dayOfWeek}`;
+      if (evergreenCount !== weekKey) {
+        console.log(`⏰ Scheduled evergreen generation`);
+        generateEvergreenContent();
+        evergreenCount = weekKey;
+      }
+    }
+  }, 60000);
+}
+
+app.get('/api/blog-articles', async (req, res) => {
+  try {
+    const articles = await Article.find().sort({ publishedAt: -1 }).limit(50).select('-content');
+    res.json({
+      articles: articles.map(a => ({
+        id: a._id,
+        title: a.title,
+        slug: a.slug,
+        excerpt: a.excerpt,
+        author: a.author,
+        category: a.category,
+        articleType: a.articleType,
+        image: a.image,
+        readTime: a.readTime,
+        publishedAt: a.publishedAt
+      })),
+      count: articles.length
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch articles' });
+  }
+});
+
+app.get('/api/blog-articles/:slug', async (req, res) => {
+  try {
+    const article = await Article.findOne({ slug: req.params.slug });
+    if (!article) return res.status(404).json({ error: 'Article not found' });
+    res.json(article);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch article' });
+  }
+});
+
+app.post('/api/generate-articles', async (req, res) => {
+  try {
+    const { type } = req.body;
+    if (type === 'evergreen') {
+      await generateEvergreenContent();
+      res.json({ success: true, message: 'Evergreen article generated' });
+    } else {
+      await generateDailyArticles();
+      res.json({ success: true, message: 'Daily articles generated' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to generate articles' });
+  }
+});
+
+app.get('/api/top-gainers', async (req, res) => {
+  try {
+    const now = Date.now();
+    
+    if (cachedMarketData.lastUpdated && (now - cachedMarketData.lastUpdated) < 12 * 60 * 1000) {
+      console.log('📦 Returning cached gainers data');
+      return res.json({
+        gainers: cachedMarketData.gainers.slice(0, 10),
+        lastUpdated: new Date(cachedMarketData.lastUpdated).toISOString(),
+        source: 'cache'
+      });
+    }
+
+    console.log('🔄 Fetching fresh gainers data...');
+    const marketData = await fetchMarketMovers();
+    
+    if (marketData && marketData.gainers.length > 0) {
+      cachedMarketData = {
+        gainers: marketData.gainers,
+        losers: marketData.losers,
+        lastUpdated: now
+      };
+
+      return res.json({
+        gainers: marketData.gainers.slice(0, 10),
+        lastUpdated: new Date(now).toISOString(),
+        source: 'live'
+      });
+    }
+
+    res.status(503).json({ error: 'Market data unavailable' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch gainers' });
+  }
+});
+
+app.get('/api/top-losers', async (req, res) => {
+  try {
+    const now = Date.now();
+    
+    if (cachedMarketData.lastUpdated && (now - cachedMarketData.lastUpdated) < 12 * 60 * 1000) {
+      console.log('📦 Returning cached losers data');
+      return res.json({
+        losers: cachedMarketData.losers.slice(0, 10),
+        lastUpdated: new Date(cachedMarketData.lastUpdated).toISOString(),
+        source: 'cache'
+      });
+    }
+
+    console.log('🔄 Fetching fresh losers data...');
+    const marketData = await fetchMarketMovers();
+    
+    if (marketData && marketData.losers.length > 0) {
+      cachedMarketData = {
+        gainers: marketData.gainers,
+        losers: marketData.losers,
+        lastUpdated: now
+      };
+
+      return res.json({
+        losers: marketData.losers.slice(0, 10),
+        lastUpdated: new Date(now).toISOString(),
+        source: 'live'
+      });
+    }
+
+    res.status(503).json({ error: 'Market data unavailable' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch losers' });
+  }
+});
+
+app.get('/api/market-sentiment', async (req, res) => {
+  try {
+    const spyResponse = await fetch(`https://finnhub.io/api/v1/quote?symbol=SPY&token=${FINNHUB_API_KEY}`);
+    const spyData = await spyResponse.json();
+
+    if (spyData && spyData.dp !== undefined) {
+      const spyChange = spyData.dp;
+      let sentiment, color;
+      if (spyChange > 1) {
+        sentiment = 'Bullish';
+        color = 'green';
+      } else if (spyChange < -1) {
+        sentiment = 'Bearish';
+        color = 'red';
+      } else {
+        sentiment = 'Mixed';
+        color = 'orange';
+      }
+
+      return res.json({ sentiment, color, spyChange: spyChange.toFixed(2), spyPrice: spyData.c });
+    }
+
+    res.status(500).json({ error: 'Unable to fetch SPY' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch sentiment' });
+  }
+});
+
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    cacheStatus: cachedMarketData.lastUpdated ? 'Active' : 'Empty',
+    marketStatus: isMarketOpen() ? 'Open' : 'Closed'
+  });
+});
+
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Stock Market API v5.1 - Extreme Movers Edition',
+    endpoints: {
+      health: '/health',
+      topGainers: '/api/top-gainers',
+      topLosers: '/api/top-losers',
+      marketSentiment: '/api/market-sentiment',
+      blogArticles: '/api/blog-articles',
+      singleArticle: '/api/blog-articles/:slug',
+      generateArticles: 'POST /api/generate-articles'
+    }
+  });
+});
+
+setTimeout(async () => {
+  const articleCount = await Article.countDocuments();
+  if (articleCount === 0) {
+    console.log('🚀 Generating initial content...');
+    await generateDailyArticles();
+    await generateEvergreenContent();
+  } else {
+    console.log(`📚 Found ${articleCount} existing articles`);
+  }
+}, 10000);
+
+scheduleArticleGeneration();
+
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => {
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('🚀 Stock Market API v5.1 - EXTREME MOVERS');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log(`📡 Port: ${PORT}`);
+  console.log('📊 Filters: NYSE/NASDAQ, 28%+ moves, 500k+ volume');
+  console.log('🤖 AI Blog Generation: ENABLED');
+  console.log('📝 Daily articles: 2x daily (10AM, 2PM)');
+  console.log('🔄 Data Updates: Every 12 minutes');
+  console.log(`📅 Market Status: ${isMarketOpen() ? 'OPEN' : 'CLOSED'}`);
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+});
+
+module.exports = app;
