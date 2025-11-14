@@ -194,75 +194,76 @@ function generateChartData(changePercent) {
   return data;
 }
 
-// Fetch market movers from Alpha Vantage - REAL-TIME & FREE
+// Fetch market movers from Finnhub - FREE & RELIABLE
 async function fetchMarketMovers() {
   try {
-    console.log('📊 Fetching LIVE market movers from Alpha Vantage...');
+    console.log('📊 Fetching market movers from Finnhub...');
     
-    const url = `https://www.alphavantage.co/query?function=TOP_GAINERS_LOSERS&apikey=${ALPHA_VANTAGE_KEY}`;
+    // Fetch US market movers
+    const url = `https://finnhub.io/api/v1/stock/metric?symbol=SPY&metric=all&token=${FINNHUB_API_KEY}`;
     
-    const response = await fetch(url);
-    const data = await response.json();
+    // Get list of active US stocks
+    const stocksUrl = `https://finnhub.io/api/v1/stock/symbol?exchange=US&token=${FINNHUB_API_KEY}`;
+    const stocksResponse = await fetch(stocksUrl);
+    const allStocks = await stocksResponse.json();
     
-    // DEBUG: Log what we actually received
-    console.log('Alpha Vantage Response:', JSON.stringify(data).substring(0, 200));
+    // Get quotes for top stocks
+    const topStocks = allStocks.filter(s => 
+      s.type === 'Common Stock' && 
+      !s.symbol.includes('.')
+    ).slice(0, 100); // Get top 100 to analyze
     
-    if (data.Note) {
-      console.warn('⚠️ Alpha Vantage API rate limit:', data.Note);
+    const stockData = [];
+    
+    // Fetch quotes for each stock (batched to avoid rate limits)
+    for (let i = 0; i < Math.min(topStocks.length, 50); i++) {
+      try {
+        const quoteUrl = `https://finnhub.io/api/v1/quote?symbol=${topStocks[i].symbol}&token=${FINNHUB_API_KEY}`;
+        const quoteResponse = await fetch(quoteUrl);
+        const quote = await quoteResponse.json();
+        
+        if (quote.c && quote.pc && quote.c > 0 && quote.pc > 0) {
+          const change = ((quote.c - quote.pc) / quote.pc) * 100;
+          
+          stockData.push({
+            ticker: topStocks[i].symbol,
+            name: topStocks[i].description || topStocks[i].symbol,
+            price: quote.c,
+            change: change,
+            volume: quote.v || 0,
+            chartData: generateChartData(change)
+          });
+        }
+        
+        // Small delay to respect rate limits
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (err) {
+        console.log(`Skipped ${topStocks[i].symbol}`);
+      }
+    }
+    
+    if (stockData.length === 0) {
+      console.error('❌ No valid stock data received');
       return null;
     }
     
-    if (data['Error Message']) {
-      console.error('❌ Alpha Vantage Error:', data['Error Message']);
-      return null;
-    }
+    const gainers = stockData
+      .filter(s => s.change > 0)
+      .sort((a, b) => b.change - a.change)
+      .slice(0, 20);
     
-    if (data.Information) {
-      console.warn('⚠️ Alpha Vantage Info:', data.Information);
-      return null;
-    }
+    const losers = stockData
+      .filter(s => s.change < 0)
+      .sort((a, b) => a.change - b.change)
+      .slice(0, 20);
     
-    if (!data.top_gainers || !data.top_losers) {
-      console.error('❌ Missing gainers/losers data. Keys in response:', Object.keys(data));
-      return null;
-    }
-    
-    if (data.top_gainers.length === 0) {
-      console.warn('⚠️ Alpha Vantage returned empty gainers list');
-      return null;
-    }
-    
-    const gainers = data.top_gainers.slice(0, 20).map(stock => {
-      const change = parseFloat(stock.change_percentage.replace('%', ''));
-      return {
-        ticker: stock.ticker,
-        name: stock.ticker,
-        price: parseFloat(stock.price),
-        change: change,
-        volume: parseInt(stock.volume),
-        chartData: generateChartData(change)
-      };
-    });
-
-    const losers = data.top_losers.slice(0, 20).map(stock => {
-      const change = parseFloat(stock.change_percentage.replace('%', ''));
-      return {
-        ticker: stock.ticker,
-        name: stock.ticker,
-        price: parseFloat(stock.price),
-        change: change,
-        volume: parseInt(stock.volume),
-        chartData: generateChartData(change)
-      };
-    });
-
     console.log(`🚀 Top Gainer: ${gainers[0]?.ticker} +${gainers[0]?.change.toFixed(2)}% @ $${gainers[0]?.price.toFixed(2)}`);
     console.log(`📉 Top Loser: ${losers[0]?.ticker} ${losers[0]?.change.toFixed(2)}% @ $${losers[0]?.price.toFixed(2)}`);
-    console.log(`✅ Fetched LIVE data from Alpha Vantage`);
+    console.log(`✅ Fetched data for ${stockData.length} stocks from Finnhub`);
     
     return { gainers, losers };
   } catch (error) {
-    console.error('💥 Error fetching from Alpha Vantage:', error.message);
+    console.error('💥 Error fetching from Finnhub:', error.message);
     return null;
   }
 }
