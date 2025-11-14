@@ -106,71 +106,99 @@ function generateChartData(changePercent) {
   return data;
 }
 
-// Fetch market movers from Polygon - TODAY'S DATA vs YESTERDAY'S CLOSE
+const cheerio = require('cheerio'); // Add this to package.json
+
+// Fetch market movers from Finviz (via scraping)
 async function fetchMarketMovers() {
   try {
-    console.log('📊 Fetching TODAY\'S NYSE/NASDAQ data from Polygon...');
+    console.log('📊 Scraping Finviz for real-time top movers...');
     
-    const today = new Date().toISOString().split('T')[0];
-    const url = `https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/${today}?adjusted=true&apiKey=${POLYGON_API_KEY}`;
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    };
     
-    const response = await fetch(url);
-    const data = await response.json();
+    // Fetch top gainers
+    const gainersUrl = 'https://finviz.com/screener.ashx?v=111&s=ta_topgainers&f=sh_avgvol_o500';
+    const gainersResponse = await fetch(gainersUrl, { headers });
+    const gainersHtml = await gainersResponse.text();
     
-    if (data.status !== 'OK' || !data.results) {
-      console.error('Polygon API error:', data);
-      return { gainers: [], losers: [] };
-    }
+    // Small delay to avoid rate limiting
+    await new Promise(resolve => setTimeout(resolve, 2000));
     
-    console.log(`✅ Received ${data.results.length} stocks from Polygon (${today})`);
+    // Fetch top losers
+    const losersUrl = 'https://finviz.com/screener.ashx?v=111&s=ta_toplosers&f=sh_avgvol_o500';
+    const losersResponse = await fetch(losersUrl, { headers });
+    const losersHtml = await losersResponse.text();
     
-    const stocks = data.results
-      .filter(stock => 
-        stock.c > 0 && 
-        stock.pc > 0 && // Previous close must exist
-        stock.v >= 500000 &&
-        !stock.T.includes('.') &&
-        stock.T.length <= 5
-      )
-      .map(stock => {
-        // CRITICAL: Compare TODAY's price (c) to YESTERDAY's close (pc)
-        const changePercent = ((stock.c - stock.pc) / stock.pc) * 100;
-        return {
-          ticker: stock.T,
-          name: stock.T,
-          price: stock.c,
-          change: changePercent,
-          volume: stock.v,
-          chartData: generateChartData(changePercent)
-        };
-      });
+    // Parse gainers
+    const $gainers = cheerio.load(gainersHtml);
+    const gainers = [];
     
-    console.log(`📊 Filtered to ${stocks.length} stocks with 500k+ volume`);
+    $gainers('table.table-light tr').each((i, row) => {
+      if (i === 0) return; // Skip header
+      const cols = $gainers(row).find('td');
+      if (cols.length >= 11) {
+        const ticker = $gainers(cols[1]).text().trim();
+        const price = parseFloat($gainers(cols[8]).text().replace(/[^0-9.]/g, ''));
+        const change = parseFloat($gainers(cols[9]).text().replace(/[^0-9.-]/g, ''));
+        const volume = parseInt($gainers(cols[10]).text().replace(/[^0-9]/g, ''));
+        
+        if (ticker && price && change && volume >= 500000 && Math.abs(change) >= 28) {
+          gainers.push({
+            ticker,
+            name: ticker,
+            price,
+            change,
+            volume,
+            chartData: generateChartData(change)
+          });
+        }
+      }
+    });
     
-    const gainers = stocks
-      .filter(s => s.change >= 28)
-      .sort((a, b) => b.change - a.change)
-      .slice(0, 20);
+    // Parse losers
+    const $losers = cheerio.load(losersHtml);
+    const losers = [];
     
-    const losers = stocks
-      .filter(s => s.change <= -28)
-      .sort((a, b) => a.change - b.change)
-      .slice(0, 20);
+    $losers('table.table-light tr').each((i, row) => {
+      if (i === 0) return;
+      const cols = $losers(row).find('td');
+      if (cols.length >= 11) {
+        const ticker = $losers(cols[1]).text().trim();
+        const price = parseFloat($losers(cols[8]).text().replace(/[^0-9.]/g, ''));
+        const change = parseFloat($losers(cols[9]).text().replace(/[^0-9.-]/g, ''));
+        const volume = parseInt($losers(cols[10]).text().replace(/[^0-9]/g, ''));
+        
+        if (ticker && price && change && volume >= 500000 && Math.abs(change) >= 28) {
+          losers.push({
+            ticker,
+            name: ticker,
+            price,
+            change,
+            volume,
+            chartData: generateChartData(change)
+          });
+        }
+      }
+    });
     
-    console.log(`🚀 Found ${gainers.length} gainers with 28%+ moves and 500k+ volume`);
-    console.log(`📉 Found ${losers.length} losers with 28%- moves and 500k+ volume`);
+    console.log(`🚀 Found ${gainers.length} gainers (28%+, 500k+ vol)`);
+    console.log(`📉 Found ${losers.length} losers (28%-, 500k+ vol)`);
     
     if (gainers.length > 0) {
-      console.log(`   Top Gainer: ${gainers[0].ticker} +${gainers[0].change.toFixed(2)}% @ $${gainers[0].price.toFixed(2)}`);
+      console.log(`   Top: ${gainers[0].ticker} +${gainers[0].change.toFixed(2)}%`);
     }
     if (losers.length > 0) {
-      console.log(`   Top Loser: ${losers[0].ticker} ${losers[0].change.toFixed(2)}% @ $${losers[0].price.toFixed(2)}`);
+      console.log(`   Top: ${losers[0].ticker} ${losers[0].change.toFixed(2)}%`);
     }
     
-    return { gainers, losers };
+    return { 
+      gainers: gainers.slice(0, 20), 
+      losers: losers.slice(0, 20) 
+    };
     
   } catch (error) {
-    console.error('💥 Error fetching from Polygon:', error);
+    console.error('💥 Error scraping Finviz:', error.message);
     return { gainers: [], losers: [] };
   }
 }
