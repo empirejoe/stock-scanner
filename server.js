@@ -6,6 +6,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+const POLYGON_API_KEY = process.env.POLYGON_API_KEY || 't_RrZpaMlwv9kmfeYM0I0x71Wn_DmlOH';
 const FINNHUB_API_KEY = 'd3n5abhr01qk6515r7fgd3n5abhr01qk6515r7g0';
 
 let cachedMarketData = { gainers: [], losers: [], lastUpdated: null };
@@ -25,81 +26,73 @@ function generateChartData(changePercent) {
   return data;
 }
 
-// Popular US stocks to scan
-const STOCK_UNIVERSE = [
-  // Mega Cap Tech
-  'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'AMD', 'INTC', 'NFLX',
-  // Large Cap Tech
-  'CRM', 'ORCL', 'CSCO', 'ADBE', 'AVGO', 'TXN', 'QCOM', 'NOW', 'INTU', 'SNOW',
-  // Meme/Retail Favorites
-  'GME', 'AMC', 'PLTR', 'SOFI', 'RIVN', 'LCID', 'NIO', 'BBBY', 'HOOD', 'COIN',
-  // EV & Auto
-  'F', 'GM', 'STLA', 'XPEV', 'LI', 'FSR',
-  // Fintech
-  'PYPL', 'SQ', 'AFRM', 'UPST', 'V', 'MA',
-  // Biotech/Pharma
-  'MRNA', 'BNTX', 'PFE', 'JNJ', 'ABBV', 'GILD', 'REGN',
-  // Energy
-  'XOM', 'CVX', 'COP', 'SLB', 'EOG',
-  // Crypto Related
-  'MSTR', 'MARA', 'RIOT', 'CLSK',
-  // Other Popular
-  'DIS', 'BA', 'UBER', 'ABNB', 'DASH', 'SHOP', 'SPOT', 'ROKU', 'SNAP', 'PINS',
-  'JPM', 'BAC', 'WFC', 'GS', 'C', 'WMT', 'TGT', 'COST', 'HD', 'LOW',
-  // Small/Mid Cap Movers (commonly move big %)
-  'PLUG', 'BLNK', 'CHPT', 'QS', 'GOEV', 'WKHS', 'RIDE', 'NKLA', 'HYLN', 'SPCE'
-];
-
-async function fetchStockQuote(ticker) {
+async function fetchMarketMovers() {
   try {
-    const response = await fetch(
-      `https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${FINNHUB_API_KEY}`
-    );
+    console.log('🔍 Fetching ALL NYSE/NASDAQ stocks from Polygon.io...');
+    
+    // Get yesterday's date (market data is based on previous close)
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const dateStr = yesterday.toISOString().split('T')[0];
+    
+    // Polygon's grouped daily endpoint returns ALL stocks in one call
+    const url = `https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/${dateStr}?adjusted=true&apiKey=${POLYGON_API_KEY}`;
+    
+    const response = await fetch(url);
     const data = await response.json();
     
-    if (data.c && data.dp !== null && data.c > 0) {
-      return {
-        ticker,
-        name: ticker,
-        price: data.c,
-        change: data.dp,
-        chartData: generateChartData(data.dp)
-      };
+    if (data.status !== 'OK' || !data.results) {
+      console.error('❌ Polygon API error:', data);
+      return null;
     }
-    return null;
-  } catch (error) {
-    console.error(`Error fetching ${ticker}:`, error.message);
-    return null;
-  }
-}
-
-async function scanMarket() {
-  console.log(`Scanning ${STOCK_UNIVERSE.length} stocks...`);
-  
-  const batchSize = 10;
-  const allResults = [];
-  
-  for (let i = 0; i < STOCK_UNIVERSE.length; i += batchSize) {
-    const batch = STOCK_UNIVERSE.slice(i, i + batchSize);
-    const promises = batch.map(ticker => fetchStockQuote(ticker));
-    const results = await Promise.all(promises);
-    allResults.push(...results.filter(r => r !== null));
     
-    // Small delay between batches to respect rate limits
-    if (i + batchSize < STOCK_UNIVERSE.length) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
+    console.log(`✅ Received ${data.results.length} stocks from Polygon`);
+    
+    // Calculate percentage change for each stock
+    const stocks = data.results
+      .filter(stock => stock.o > 0 && stock.c > 0 && stock.v > 100000) // Filter valid prices & volume
+      .map(stock => {
+        const changePercent = ((stock.c - stock.o) / stock.o) * 100;
+        return {
+          ticker: stock.T,
+          name: stock.T,
+          price: stock.c,
+          change: changePercent,
+          volume: stock.v,
+          chartData: generateChartData(changePercent)
+        };
+      });
+    
+    // Get top 20 gainers
+    const gainers = stocks
+      .filter(s => s.change > 0)
+      .sort((a, b) => b.change - a.change)
+      .slice(0, 20);
+    
+    // Get top 20 losers
+    const losers = stocks
+      .filter(s => s.change < 0)
+      .sort((a, b) => a.change - b.change)
+      .slice(0, 20);
+    
+    console.log(`🔥 Top Gainer: ${gainers[0]?.ticker} +${gainers[0]?.change.toFixed(2)}%`);
+    console.log(`❄️  Top Loser: ${losers[0]?.ticker} ${losers[0]?.change.toFixed(2)}%`);
+    console.log(`📊 Total stocks scanned: ${stocks.length}`);
+    
+    return { gainers, losers };
+  } catch (error) {
+    console.error('💥 Error fetching from Polygon:', error);
+    return null;
   }
-  
-  console.log(`Successfully fetched ${allResults.length} stocks`);
-  return allResults;
 }
 
 app.get('/api/top-gainers', async (req, res) => {
   try {
     const now = Date.now();
     
-    if (cachedMarketData.lastUpdated && (now - cachedMarketData.lastUpdated) < 5 * 60 * 1000) {
+    // 12-minute cache (720,000 milliseconds)
+    if (cachedMarketData.lastUpdated && (now - cachedMarketData.lastUpdated) < 12 * 60 * 1000) {
+      console.log('📦 Returning cached gainers');
       return res.json({
         gainers: cachedMarketData.gainers.slice(0, 10),
         lastUpdated: new Date(cachedMarketData.lastUpdated).toISOString(),
@@ -107,29 +100,25 @@ app.get('/api/top-gainers', async (req, res) => {
       });
     }
 
-    console.log('Fetching fresh market data...');
-    const allStocks = await scanMarket();
+    console.log('🆕 Cache expired, fetching fresh data...');
+    const marketData = await fetchMarketMovers();
     
-    const gainers = allStocks
-      .filter(stock => stock.change > 0)
-      .sort((a, b) => b.change - a.change)
-      .slice(0, 20);
-      
-    const losers = allStocks
-      .filter(stock => stock.change < 0)
-      .sort((a, b) => a.change - b.change)
-      .slice(0, 20);
+    if (marketData && marketData.gainers.length > 0) {
+      cachedMarketData = {
+        gainers: marketData.gainers,
+        losers: marketData.losers,
+        lastUpdated: now
+      };
 
-    cachedMarketData = { gainers, losers, lastUpdated: now };
+      return res.json({
+        gainers: marketData.gainers.slice(0, 10),
+        lastUpdated: new Date(now).toISOString(),
+        source: 'polygon',
+        marketCoverage: 'All NYSE/NASDAQ stocks'
+      });
+    }
 
-    console.log(`Top Gainer: ${gainers[0]?.ticker} +${gainers[0]?.change.toFixed(2)}%`);
-    console.log(`Top Loser: ${losers[0]?.ticker} ${losers[0]?.change.toFixed(2)}%`);
-
-    return res.json({
-      gainers: gainers.slice(0, 10),
-      lastUpdated: new Date(now).toISOString(),
-      source: 'finnhub'
-    });
+    res.status(503).json({ error: 'Market data unavailable' });
   } catch (error) {
     console.error('Error:', error);
     res.status(500).json({ error: 'Failed to fetch gainers' });
@@ -140,7 +129,9 @@ app.get('/api/top-losers', async (req, res) => {
   try {
     const now = Date.now();
     
-    if (cachedMarketData.lastUpdated && (now - cachedMarketData.lastUpdated) < 5 * 60 * 1000) {
+    // 12-minute cache
+    if (cachedMarketData.lastUpdated && (now - cachedMarketData.lastUpdated) < 12 * 60 * 1000) {
+      console.log('📦 Returning cached losers');
       return res.json({
         losers: cachedMarketData.losers.slice(0, 10),
         lastUpdated: new Date(cachedMarketData.lastUpdated).toISOString(),
@@ -148,26 +139,25 @@ app.get('/api/top-losers', async (req, res) => {
       });
     }
 
-    console.log('Fetching fresh market data...');
-    const allStocks = await scanMarket();
+    console.log('🆕 Cache expired, fetching fresh data...');
+    const marketData = await fetchMarketMovers();
     
-    const gainers = allStocks
-      .filter(stock => stock.change > 0)
-      .sort((a, b) => b.change - a.change)
-      .slice(0, 20);
-      
-    const losers = allStocks
-      .filter(stock => stock.change < 0)
-      .sort((a, b) => a.change - b.change)
-      .slice(0, 20);
+    if (marketData && marketData.losers.length > 0) {
+      cachedMarketData = {
+        gainers: marketData.gainers,
+        losers: marketData.losers,
+        lastUpdated: now
+      };
 
-    cachedMarketData = { gainers, losers, lastUpdated: now };
+      return res.json({
+        losers: marketData.losers.slice(0, 10),
+        lastUpdated: new Date(now).toISOString(),
+        source: 'polygon',
+        marketCoverage: 'All NYSE/NASDAQ stocks'
+      });
+    }
 
-    return res.json({
-      losers: losers.slice(0, 10),
-      lastUpdated: new Date(now).toISOString(),
-      source: 'finnhub'
-    });
+    res.status(503).json({ error: 'Market data unavailable' });
   } catch (error) {
     console.error('Error:', error);
     res.status(500).json({ error: 'Failed to fetch losers' });
@@ -214,26 +204,58 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
-    cacheStatus: cachedMarketData.lastUpdated ? 'Active' : 'Empty'
+    cacheStatus: cachedMarketData.lastUpdated ? 'Active' : 'Empty',
+    updateInterval: '12 minutes',
+    marketCoverage: 'All NYSE/NASDAQ stocks'
   });
 });
 
 app.get('/', (req, res) => {
   res.json({
-    message: 'Stock Market API v2.0 - Finnhub',
+    message: 'Stock Market API v3.0 - Polygon.io',
     endpoints: {
       health: '/health',
       topGainers: '/api/top-gainers',
       topLosers: '/api/top-losers',
       marketSentiment: '/api/market-sentiment'
+    },
+    features: {
+      marketCoverage: 'All NYSE/NASDAQ stocks (~5,700 tickers)',
+      updateInterval: '12 minutes',
+      dataSource: 'Polygon.io + Finnhub'
     }
   });
 });
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log('Stock Market API Started on port', PORT);
-  console.log('Using Finnhub API for market data');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('🚀 Stock Market API v3.0 STARTED!');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log(`📡 Port: ${PORT}`);
+  console.log('📊 Market Coverage: ALL NYSE/NASDAQ stocks');
+  console.log('⏱️  Update Interval: 12 minutes');
+  console.log('🔑 Using Polygon.io API');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 });
 
 module.exports = app;
+```
+
+---
+
+## **Deploy Steps:**
+
+1. **Go to GitHub:** https://github.com/empirejoe/stock-scanner/blob/main/server.js
+2. **Click the pencil icon (✏️)** to edit
+3. **Delete everything and paste the code above**
+4. **Commit changes:** "Add Polygon.io - scan all NYSE/NASDAQ stocks every 12 min"
+5. **Wait 2-3 minutes** for Render to auto-deploy
+
+---
+
+## **Test It:**
+
+Once deployed, open:
+```
+https://stock-scanner-za3b.onrender.com/api/top-gainers
