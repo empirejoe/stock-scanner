@@ -106,102 +106,69 @@ function generateChartData(changePercent) {
   return data;
 }
 
-// Fetch market movers from Finnhub - WITH EXTREME MOVER FILTERS
+// Fetch market movers from Polygon - TODAY'S SESSION DATA
 async function fetchMarketMovers() {
   try {
-    console.log('📊 Fetching NYSE/NASDAQ extreme movers from Finnhub...');
+    console.log('📊 Fetching TODAY\'S NYSE/NASDAQ data from Polygon...');
     
-    const symbolsUrl = `https://finnhub.io/api/v1/stock/symbol?exchange=US&token=${FINNHUB_API_KEY}`;
-    const symbolsResponse = await fetch(symbolsUrl);
-    const allSymbols = await symbolsResponse.json();
+    // Get TODAY's date
+    const today = new Date().toISOString().split('T')[0];
     
-    const nyseNasdaqStocks = allSymbols.filter(stock => 
-      (stock.mic === 'XNYS' || stock.mic === 'XNAS') &&
-      stock.type === 'Common Stock' &&
-      !stock.symbol.includes('.') &&
-      !stock.symbol.includes('-') &&
-      !stock.symbol.includes('^') &&
-      !stock.symbol.includes('$') &&
-      stock.symbol.length >= 1 && 
-      stock.symbol.length <= 5 &&
-      !/[^A-Z]/.test(stock.symbol)
-    );
+    const url = `https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/${today}?adjusted=true&apiKey=${POLYGON_API_KEY}`;
     
-    console.log(`✅ Found ${nyseNasdaqStocks.length} filtered NYSE/NASDAQ stocks`);
+    const response = await fetch(url);
+    const data = await response.json();
     
-    const stockData = [];
-    const batchSize = 50;
-    
-    console.log(`🔍 Scanning for 28%+ movers with 500k+ volume...`);
-    
-    for (let i = 0; i < nyseNasdaqStocks.length; i += batchSize) {
-      const batch = nyseNasdaqStocks.slice(i, i + batchSize);
-      
-      const promises = batch.map(async (stock) => {
-        try {
-          const url = `https://finnhub.io/api/v1/quote?symbol=${stock.symbol}&token=${FINNHUB_API_KEY}`;
-          const response = await fetch(url);
-          const quote = await response.json();
-          
-          if (quote.c && quote.pc && quote.c > 0 && quote.pc > 0) {
-            const change = ((quote.c - quote.pc) / quote.pc) * 100;
-            const volume = quote.v || 0;
-            
-            if (
-              volume >= 500000 &&
-              quote.c >= 1 &&
-              quote.c <= 10000 &&
-              Math.abs(change) >= 28
-            ) {
-              return {
-                ticker: stock.symbol,
-                name: stock.description || stock.symbol,
-                price: quote.c,
-                change: change,
-                volume: volume,
-                chartData: generateChartData(change)
-              };
-            }
-          }
-        } catch (err) {
-          // Skip
-        }
-        return null;
-      });
-      
-      const results = await Promise.all(promises);
-      stockData.push(...results.filter(r => r !== null));
-      
-      if ((i + batchSize) % 500 === 0) {
-        console.log(`  📊 Scanned ${Math.min(i + batchSize, nyseNasdaqStocks.length)}/${nyseNasdaqStocks.length} stocks...`);
-      }
-      
-      await new Promise(resolve => setTimeout(resolve, 60));
-    }
-    
-    console.log(`✅ Found ${stockData.length} stocks with 28%+ moves and 500k+ volume`);
-    
-    if (stockData.length === 0) {
-      console.warn('⚠️ No stocks met extreme mover criteria (28%+, 500k+ vol)');
+    if (data.status !== 'OK' || !data.results) {
+      console.error('Polygon API error:', data);
       return null;
     }
     
-    const gainers = stockData
-      .filter(s => s.change > 0)
+    console.log(`✅ Received ${data.results.length} stocks from Polygon (TODAY'S DATA)`);
+    
+    const stocks = data.results
+      .filter(stock => 
+        stock.o > 0 && 
+        stock.c > 0 && 
+        stock.v >= 500000 && // 500k+ volume TODAY
+        !stock.T.includes('.') &&
+        stock.T.length <= 5
+      )
+      .map(stock => {
+        const changePercent = ((stock.c - stock.pc) / stock.pc) * 100; // c = current, pc = previous close
+        return {
+          ticker: stock.T,
+          name: stock.T,
+          price: stock.c,
+          change: changePercent,
+          volume: stock.v,
+          chartData: generateChartData(changePercent)
+        };
+      });
+    
+    const gainers = stocks
+      .filter(s => s.change >= 28) // 28%+ UP
       .sort((a, b) => b.change - a.change)
       .slice(0, 20);
     
-    const losers = stockData
-      .filter(s => s.change < 0)
+    const losers = stocks
+      .filter(s => s.change <= -28) // 28%+ DOWN
       .sort((a, b) => a.change - b.change)
       .slice(0, 20);
     
-    console.log(`🚀 Top Gainer: ${gainers[0]?.ticker} +${gainers[0]?.change.toFixed(2)}% @ $${gainers[0]?.price.toFixed(2)} (Vol: ${(gainers[0]?.volume / 1000000).toFixed(1)}M)`);
-    console.log(`📉 Top Loser: ${losers[0]?.ticker} ${losers[0]?.change.toFixed(2)}% @ $${losers[0]?.price.toFixed(2)} (Vol: ${(losers[0]?.volume / 1000000).toFixed(1)}M)`);
+    console.log(`🚀 Found ${gainers.length} gainers with 28%+ moves and 500k+ volume`);
+    console.log(`📉 Found ${losers.length} losers with 28%+ moves and 500k+ volume`);
+    
+    if (gainers.length > 0) {
+      console.log(`🚀 Top Gainer: ${gainers[0]?.ticker} +${gainers[0]?.change.toFixed(2)}%`);
+    }
+    if (losers.length > 0) {
+      console.log(`📉 Top Loser: ${losers[0]?.ticker} ${losers[0]?.change.toFixed(2)}%`);
+    }
     
     return { gainers, losers };
   } catch (error) {
-    console.error('💥 Error fetching from Finnhub:', error.message);
+    console.error('Error fetching from Polygon:', error);
     return null;
   }
 }
