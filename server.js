@@ -194,104 +194,57 @@ function generateChartData(changePercent) {
   return data;
 }
 
-// Fetch market movers from Finnhub - REAL-TIME ALL NYSE/NASDAQ STOCKS
+// Fetch market movers from Yahoo Finance - REAL TOP MOVERS
 async function fetchMarketMovers() {
   try {
-    console.log('📊 Fetching ALL NYSE/NASDAQ stocks from Finnhub...');
+    console.log('📊 Fetching REAL-TIME top movers from Yahoo Finance...');
     
-    // Step 1: Get all US stock symbols
-    const symbolsUrl = `https://finnhub.io/api/v1/stock/symbol?exchange=US&token=${FINNHUB_API_KEY}`;
-    const symbolsResponse = await fetch(symbolsUrl);
-    const allSymbols = await symbolsResponse.json();
+    // Yahoo Finance unofficial API - Day Gainers and Day Losers
+    const gainersUrl = 'https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?formatted=true&lang=en-US&region=US&scrIds=day_gainers&count=100';
+    const losersUrl = 'https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?formatted=true&lang=en-US&region=US&scrIds=day_losers&count=100';
     
-    // Step 2: Filter for NYSE and NASDAQ only
-    const nyseNasdaqStocks = allSymbols.filter(stock => 
-      stock.type === 'Common Stock' &&
-      (stock.mic === 'XNYS' || stock.mic === 'XNAS') &&
-      !stock.symbol.includes('.') &&
-      !stock.symbol.includes('-') &&
-      stock.symbol.length <= 5
-    );
+    const [gainersResponse, losersResponse] = await Promise.all([
+      fetch(gainersUrl),
+      fetch(losersUrl)
+    ]);
     
-    console.log(`✅ Found ${nyseNasdaqStocks.length} NYSE/NASDAQ stocks`);
+    const gainersData = await gainersResponse.json();
+    const losersData = await losersResponse.json();
     
-    // Step 3: Check MORE stocks (800-1000) to find real top movers
-    const sampleSize = Math.min(1000, nyseNasdaqStocks.length);
-    const sampled = nyseNasdaqStocks.slice(0, sampleSize); // Don't randomize - check first 1000
-    
-    const stockData = [];
-    const batchSize = 30; // Larger batches
-    
-    console.log(`🔍 Analyzing ${sampleSize} stocks for top movers...`);
-    
-    // Step 4: Fetch quotes in batches
-    for (let i = 0; i < sampled.length; i += batchSize) {
-      const batch = sampled.slice(i, i + batchSize);
-      
-      const promises = batch.map(async (stock) => {
-        try {
-          const url = `https://finnhub.io/api/v1/quote?symbol=${stock.symbol}&token=${FINNHUB_API_KEY}`;
-          const response = await fetch(url);
-          const quote = await response.json();
-          
-          if (quote.c && quote.pc && quote.c > 0 && quote.pc > 0 && quote.c > 1) {
-            const change = ((quote.c - quote.pc) / quote.pc) * 100;
-            
-            // Only include stocks with significant moves
-            if (Math.abs(change) > 0.5) { // At least 0.5% move
-              return {
-                ticker: stock.symbol,
-                name: stock.description || stock.symbol,
-                price: quote.c,
-                change: change,
-                volume: quote.v || 0,
-                chartData: generateChartData(change)
-              };
-            }
-          }
-        } catch (err) {
-          // Skip on error
-        }
-        return null;
-      });
-      
-      const results = await Promise.all(promises);
-      stockData.push(...results.filter(r => r !== null));
-      
-      // Progress log
-      if ((i + batchSize) % 300 === 0) {
-        console.log(`  📊 Processed ${Math.min(i + batchSize, sampled.length)}/${sampled.length} stocks...`);
-      }
-      
-      // Minimal delay (Finnhub allows 60/min)
-      if (i + batchSize < sampled.length) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-    }
-    
-    if (stockData.length === 0) {
-      console.error('❌ No valid stock data received from Finnhub');
+    if (!gainersData.finance?.result?.[0]?.quotes || !losersData.finance?.result?.[0]?.quotes) {
+      console.error('❌ Invalid Yahoo Finance response');
       return null;
     }
     
-    // Get top 20 gainers and losers
-    const gainers = stockData
-      .filter(s => s.change > 0)
-      .sort((a, b) => b.change - a.change)
-      .slice(0, 20);
+    const gainers = gainersData.finance.result[0].quotes
+      .slice(0, 20)
+      .map(stock => ({
+        ticker: stock.symbol,
+        name: stock.shortName || stock.symbol,
+        price: stock.regularMarketPrice,
+        change: stock.regularMarketChangePercent,
+        volume: stock.regularMarketVolume || 0,
+        chartData: generateChartData(stock.regularMarketChangePercent)
+      }));
     
-    const losers = stockData
-      .filter(s => s.change < 0)
-      .sort((a, b) => a.change - b.change)
-      .slice(0, 20);
+    const losers = losersData.finance.result[0].quotes
+      .slice(0, 20)
+      .map(stock => ({
+        ticker: stock.symbol,
+        name: stock.shortName || stock.symbol,
+        price: stock.regularMarketPrice,
+        change: stock.regularMarketChangePercent,
+        volume: stock.regularMarketVolume || 0,
+        chartData: generateChartData(stock.regularMarketChangePercent)
+      }));
     
     console.log(`🚀 Top Gainer: ${gainers[0]?.ticker} +${gainers[0]?.change.toFixed(2)}% @ $${gainers[0]?.price.toFixed(2)}`);
     console.log(`📉 Top Loser: ${losers[0]?.ticker} ${losers[0]?.change.toFixed(2)}% @ $${losers[0]?.price.toFixed(2)}`);
-    console.log(`✅ Analyzed ${stockData.length} NYSE/NASDAQ stocks in real-time`);
+    console.log(`✅ Fetched REAL top movers from Yahoo Finance`);
     
     return { gainers, losers };
   } catch (error) {
-    console.error('💥 Error fetching from Finnhub:', error.message);
+    console.error('💥 Error fetching from Yahoo Finance:', error.message);
     return null;
   }
 }
