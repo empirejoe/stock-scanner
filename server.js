@@ -117,98 +117,108 @@ async function fetchMarketMovers() {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     };
     
-    // Fetch top gainers (sorted by % change, 500k+ volume)
-    const gainersUrl = 'https://finviz.com/screener.ashx?v=111&f=sh_curvol_o500&ft=4&o=change';
-    console.log('🔍 Fetching gainers from Finviz...');
+    // Fetch top gainers (DESCENDING order - highest % first)
+    const gainersUrl = 'https://finviz.com/screener.ashx?v=111&f=sh_curvol_o500&ft=4&o=-change';
+    console.log('🔍 Fetching gainers from:', gainersUrl);
     const gainersResponse = await fetch(gainersUrl, { headers });
     const gainersHtml = await gainersResponse.text();
     
-    // Debug: save a sample of the HTML
-    console.log('📄 Gainers HTML sample:', gainersHtml.substring(0, 500));
+    console.log('📄 Gainers HTML length:', gainersHtml.length);
     
-    // Delay to be respectful
+    // Delay
     await new Promise(resolve => setTimeout(resolve, 2000));
     
-    // Fetch top losers (sorted by % change descending, 500k+ volume)
-    const losersUrl = 'https://finviz.com/screener.ashx?v=111&f=sh_curvol_o500&ft=4&o=-change';
-    console.log('🔍 Fetching losers from Finviz...');
+    // Fetch top losers (ASCENDING order - most negative % first)
+    const losersUrl = 'https://finviz.com/screener.ashx?v=111&f=sh_curvol_o500&ft=4&o=change';
+    console.log('🔍 Fetching losers from:', losersUrl);
     const losersResponse = await fetch(losersUrl, { headers });
     const losersHtml = await losersResponse.text();
+    
+    console.log('📄 Losers HTML length:', losersHtml.length);
     
     // Parse gainers
     const $gainers = cheerio.load(gainersHtml);
     const gainers = [];
     
-    $gainers('table tr.table-dark-row-cp, table tr.table-light-row-cp').each((i, row) => {
+    console.log('🔍 Parsing gainers table...');
+    $gainers('table tr').each((i, row) => {
       const cols = $gainers(row).find('td');
-      if (cols.length >= 11) {
+      
+      if (cols.length >= 11 && i > 0) {
         const ticker = $gainers(cols[1]).text().trim();
         const priceText = $gainers(cols[8]).text().trim();
         const changeText = $gainers(cols[9]).text().trim();
         const volumeText = $gainers(cols[10]).text().trim();
         
-        console.log(`🔍 GAINER ROW ${i}: Ticker=${ticker}, Price=${priceText}, Change=${changeText}, Volume=${volumeText}`);
-        
-        const price = parseFloat(priceText);
-        const change = parseFloat(changeText.replace('%', ''));
-        const volume = parseInt(volumeText.replace(/,/g, ''));
-        
-        if (ticker && !isNaN(price) && !isNaN(change) && !isNaN(volume)) {
-          gainers.push({
-            ticker,
-            name: ticker,
-            price,
-            change,
-            volume,
-            chartData: generateChartData(change)
-          });
+        if (ticker && ticker.length <= 5) {
+          const price = parseFloat(priceText);
+          const change = parseFloat(changeText.replace('%', '').replace('+', ''));
+          const volume = parseInt(volumeText.replace(/,/g, ''));
+          
+          if (!isNaN(price) && !isNaN(change) && !isNaN(volume)) {
+            console.log(`   ✅ ${ticker}: +${change.toFixed(2)}% @ $${price.toFixed(2)}`);
+            gainers.push({
+              ticker,
+              name: ticker,
+              price,
+              change: Math.abs(change), // Force positive
+              volume,
+              chartData: generateChartData(Math.abs(change))
+            });
+          }
         }
       }
     });
+    
+    console.log(`✅ Total gainers parsed: ${gainers.length}`);
     
     // Parse losers
     const $losers = cheerio.load(losersHtml);
     const losers = [];
     
-    $losers('table tr.table-dark-row-cp, table tr.table-light-row-cp').each((i, row) => {
+    console.log('🔍 Parsing losers table...');
+    $losers('table tr').each((i, row) => {
       const cols = $losers(row).find('td');
-      if (cols.length >= 11) {
+      
+      if (cols.length >= 11 && i > 0) {
         const ticker = $losers(cols[1]).text().trim();
         const priceText = $losers(cols[8]).text().trim();
         const changeText = $losers(cols[9]).text().trim();
         const volumeText = $losers(cols[10]).text().trim();
         
-        console.log(`🔍 LOSER ROW ${i}: Ticker=${ticker}, Price=${priceText}, Change=${changeText}, Volume=${volumeText}`);
-        
-        const price = parseFloat(priceText);
-        const change = parseFloat(changeText.replace('%', ''));
-        const volume = parseInt(volumeText.replace(/,/g, ''));
-        
-        if (ticker && !isNaN(price) && !isNaN(change) && !isNaN(volume)) {
-          losers.push({
-            ticker,
-            name: ticker,
-            price,
-            change,
-            volume,
-            chartData: generateChartData(change)
-          });
+        if (ticker && ticker.length <= 5) {
+          const price = parseFloat(priceText);
+          let change = parseFloat(changeText.replace('%', '').replace('+', ''));
+          const volume = parseInt(volumeText.replace(/,/g, ''));
+          
+          if (!isNaN(price) && !isNaN(change) && !isNaN(volume)) {
+            // Force negative if not already
+            if (change > 0) change = -change;
+            console.log(`   ✅ ${ticker}: ${change.toFixed(2)}% @ $${price.toFixed(2)}`);
+            losers.push({
+              ticker,
+              name: ticker,
+              price,
+              change: change,
+              volume,
+              chartData: generateChartData(change)
+            });
+          }
         }
       }
     });
+    
+    console.log(`✅ Total losers parsed: ${losers.length}`);
     
     // Take top 5 from each
     const topGainers = gainers.slice(0, 5);
     const topLosers = losers.slice(0, 5);
     
-    console.log(`🚀 Scraped ${topGainers.length} top gainers from Finviz`);
-    console.log(`📉 Scraped ${topLosers.length} top losers from Finviz`);
-    
     if (topGainers.length > 0) {
-      console.log(`   #1 Gainer: ${topGainers[0].ticker} ${topGainers[0].change > 0 ? '+' : ''}${topGainers[0].change.toFixed(2)}% @ $${topGainers[0].price.toFixed(2)}`);
+      console.log(`🚀 #1 Gainer: ${topGainers[0].ticker} +${topGainers[0].change.toFixed(2)}%`);
     }
     if (topLosers.length > 0) {
-      console.log(`   #1 Loser: ${topLosers[0].ticker} ${topLosers[0].change > 0 ? '+' : ''}${topLosers[0].change.toFixed(2)}% @ $${topLosers[0].price.toFixed(2)}`);
+      console.log(`📉 #1 Loser: ${topLosers[0].ticker} ${topLosers[0].change.toFixed(2)}%`);
     }
     
     return { 
