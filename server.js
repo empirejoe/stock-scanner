@@ -193,63 +193,62 @@ function generateChartData(changePercent) {
   return data;
 }
 
-// Fetch market movers from Polygon - REAL-TIME DATA
+// Fetch market movers from Alpha Vantage - REAL-TIME & FREE
 async function fetchMarketMovers() {
   try {
-    console.log('📊 Fetching LIVE NYSE/NASDAQ stocks from Polygon...');
+    console.log('📊 Fetching LIVE market movers from Alpha Vantage...');
     
-    // Get ALL tickers snapshot (current day data - LIVE)
-    const url = `https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers?apiKey=${POLYGON_API_KEY}`;
+    const url = `https://www.alphavantage.co/query?function=TOP_GAINERS_LOSERS&apikey=${ALPHA_VANTAGE_KEY}`;
     
     const response = await fetch(url);
     const data = await response.json();
     
-    if (data.status !== 'OK' || !data.tickers) {
-      console.error('Polygon API error:', data);
+    if (data.Note) {
+      console.warn('⚠️ Alpha Vantage API rate limit hit - using cached data');
       return null;
     }
     
-    console.log(`✅ Received ${data.tickers.length} stocks from Polygon (LIVE DATA)`);
+    if (data['Error Message']) {
+      console.error('❌ Alpha Vantage Error:', data['Error Message']);
+      return null;
+    }
     
-    const stocks = data.tickers
-      .filter(stock => 
-        stock.day && 
-        stock.prevDay && 
-        stock.day.c > 0 && 
-        stock.prevDay.c > 0 && 
-        stock.day.v > 100000
-      )
-      .map(stock => {
-        const currentPrice = stock.day.c; // Today's current price
-        const previousClose = stock.prevDay.c; // Yesterday's close
-        const changePercent = ((currentPrice - previousClose) / previousClose) * 100;
-        
-        return {
-          ticker: stock.ticker,
-          name: stock.ticker,
-          price: currentPrice,
-          change: changePercent,
-          volume: stock.day.v,
-          chartData: generateChartData(changePercent)
-        };
-      });
+    if (!data.top_gainers || !data.top_losers) {
+      console.error('❌ Invalid Alpha Vantage response');
+      return null;
+    }
     
-    const gainers = stocks
-      .filter(s => s.change > 0)
-      .sort((a, b) => b.change - a.change)
-      .slice(0, 20);
-    
-    const losers = stocks
-      .filter(s => s.change < 0)
-      .sort((a, b) => a.change - b.change)
-      .slice(0, 20);
-    
+    const gainers = data.top_gainers.slice(0, 20).map(stock => {
+      const change = parseFloat(stock.change_percentage.replace('%', ''));
+      return {
+        ticker: stock.ticker,
+        name: stock.ticker,
+        price: parseFloat(stock.price),
+        change: change,
+        volume: parseInt(stock.volume),
+        chartData: generateChartData(change)
+      };
+    });
+
+    const losers = data.top_losers.slice(0, 20).map(stock => {
+      const change = parseFloat(stock.change_percentage.replace('%', ''));
+      return {
+        ticker: stock.ticker,
+        name: stock.ticker,
+        price: parseFloat(stock.price),
+        change: change,
+        volume: parseInt(stock.volume),
+        chartData: generateChartData(change)
+      };
+    });
+
     console.log(`🚀 Top Gainer: ${gainers[0]?.ticker} +${gainers[0]?.change.toFixed(2)}% @ $${gainers[0]?.price.toFixed(2)}`);
     console.log(`📉 Top Loser: ${losers[0]?.ticker} ${losers[0]?.change.toFixed(2)}% @ $${losers[0]?.price.toFixed(2)}`);
+    console.log(`✅ Fetched LIVE data from Alpha Vantage`);
     
     return { gainers, losers };
   } catch (error) {
-    console.error('Error fetching from Polygon:', error);
+    console.error('💥 Error fetching from Alpha Vantage:', error);
     return null;
   }
 }
