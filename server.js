@@ -3,6 +3,7 @@ const cors = require('cors');
 const fetch = require('node-fetch');
 const Anthropic = require('@anthropic-ai/sdk');
 const mongoose = require('mongoose');
+const cheerio = require('cheerio');
 
 const app = express();
 app.use(cors());
@@ -106,9 +107,7 @@ function generateChartData(changePercent) {
   return data;
 }
 
-const cheerio = require('cheerio');
-
-// Fetch market movers from Finviz (scraping specific screener pages)
+// Fetch market movers from Finviz (scraping)
 async function fetchMarketMovers() {
   try {
     console.log('📊 Scraping Finviz for real-time top movers...');
@@ -119,28 +118,23 @@ async function fetchMarketMovers() {
     
     // Fetch top gainers (DESCENDING order - highest % first)
     const gainersUrl = 'https://finviz.com/screener.ashx?v=111&f=sh_curvol_o500&ft=4&o=-change';
-    console.log('🔍 Fetching gainers from:', gainersUrl);
+    console.log('🔍 Fetching gainers from Finviz...');
     const gainersResponse = await fetch(gainersUrl, { headers });
     const gainersHtml = await gainersResponse.text();
-    
-    console.log('📄 Gainers HTML length:', gainersHtml.length);
     
     // Delay
     await new Promise(resolve => setTimeout(resolve, 2000));
     
     // Fetch top losers (ASCENDING order - most negative % first)
     const losersUrl = 'https://finviz.com/screener.ashx?v=111&f=sh_curvol_o500&ft=4&o=change';
-    console.log('🔍 Fetching losers from:', losersUrl);
+    console.log('🔍 Fetching losers from Finviz...');
     const losersResponse = await fetch(losersUrl, { headers });
     const losersHtml = await losersResponse.text();
-    
-    console.log('📄 Losers HTML length:', losersHtml.length);
     
     // Parse gainers
     const $gainers = cheerio.load(gainersHtml);
     const gainers = [];
     
-    console.log('🔍 Parsing gainers table...');
     $gainers('table tr').each((i, row) => {
       const cols = $gainers(row).find('td');
       
@@ -156,12 +150,11 @@ async function fetchMarketMovers() {
           const volume = parseInt(volumeText.replace(/,/g, ''));
           
           if (!isNaN(price) && !isNaN(change) && !isNaN(volume)) {
-            console.log(`   ✅ ${ticker}: +${change.toFixed(2)}% @ $${price.toFixed(2)}`);
             gainers.push({
               ticker,
               name: ticker,
               price,
-              change: Math.abs(change), // Force positive
+              change: Math.abs(change),
               volume,
               chartData: generateChartData(Math.abs(change))
             });
@@ -170,13 +163,10 @@ async function fetchMarketMovers() {
       }
     });
     
-    console.log(`✅ Total gainers parsed: ${gainers.length}`);
-    
     // Parse losers
     const $losers = cheerio.load(losersHtml);
     const losers = [];
     
-    console.log('🔍 Parsing losers table...');
     $losers('table tr').each((i, row) => {
       const cols = $losers(row).find('td');
       
@@ -192,9 +182,7 @@ async function fetchMarketMovers() {
           const volume = parseInt(volumeText.replace(/,/g, ''));
           
           if (!isNaN(price) && !isNaN(change) && !isNaN(volume)) {
-            // Force negative if not already
             if (change > 0) change = -change;
-            console.log(`   ✅ ${ticker}: ${change.toFixed(2)}% @ $${price.toFixed(2)}`);
             losers.push({
               ticker,
               name: ticker,
@@ -208,17 +196,18 @@ async function fetchMarketMovers() {
       }
     });
     
-    console.log(`✅ Total losers parsed: ${losers.length}`);
-    
     // Take top 5 from each
     const topGainers = gainers.slice(0, 5);
     const topLosers = losers.slice(0, 5);
     
+    console.log(`🚀 Scraped ${topGainers.length} top gainers from Finviz`);
+    console.log(`📉 Scraped ${topLosers.length} top losers from Finviz`);
+    
     if (topGainers.length > 0) {
-      console.log(`🚀 #1 Gainer: ${topGainers[0].ticker} +${topGainers[0].change.toFixed(2)}%`);
+      console.log(`   #1 Gainer: ${topGainers[0].ticker} +${topGainers[0].change.toFixed(2)}%`);
     }
     if (topLosers.length > 0) {
-      console.log(`📉 #1 Loser: ${topLosers[0].ticker} ${topLosers[0].change.toFixed(2)}%`);
+      console.log(`   #1 Loser: ${topLosers[0].ticker} ${topLosers[0].change.toFixed(2)}%`);
     }
     
     return { 
@@ -236,46 +225,107 @@ function createSlug(title) {
   return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
 
+async function generateDailyArticles() {
+  try {
+    console.log('🤖 Generating daily market articles...');
+    
+    const marketData = await fetchMarketMovers();
+    if (!marketData || marketData.gainers.length === 0) {
+      console.error('No market data available');
+      return;
+    }
+
+    const spyResponse = await fetch(`https://finnhub.io/api/v1/quote?symbol=SPY&token=${FINNHUB_API_KEY}`);
+    const spyData = await spyResponse.json();
+    
+    const spyChange = spyData.dp || 0;
+    let sentiment = spyChange > 1 ? 'Bullish' : spyChange < -1 ? 'Bearish' : 'Mixed';
+
+    const baseData = {
+      gainers: marketData.gainers,
+      losers: marketData.losers,
+      sentiment: { text: sentiment, spyChange: spyChange.toFixed(2) }
+    };
+
+    // Article 1: Opening bell perspective / morning analysis
+    const article1 = await generateDailyArticle({ ...baseData, angle: 'opening' });
+    if (article1) {
+      await saveArticle(article1);
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+
+    // Article 2: Market trends / sector rotation perspective
+    const article2 = await generateDailyArticle({ ...baseData, angle: 'trends' });
+    if (article2) {
+      await saveArticle(article2);
+    }
+    
+    console.log('✅ Daily articles generation complete');
+  } catch (error) {
+    console.error('Error generating daily articles:', error);
+  }
+}
+
 async function generateDailyArticle(marketData) {
   try {
-    const { gainers, losers, sentiment } = marketData;
-    const topGainer = gainers[0];
-    const topLoser = losers[0];
+    const { gainers, losers, sentiment, angle } = marketData;
     
-    const prompt = `You are a professional financial journalist writing for StockMarketToday.com.
+    let articleFocus = '';
+    
+    if (angle === 'opening') {
+      articleFocus = `Focus this article on TODAY'S OVERALL MARKET ACTION and what's driving the biggest moves. Take a comprehensive "market open" perspective that covers:
+- Overall market sentiment (SPY ${sentiment.spyChange}%)
+- Top 3-5 biggest gainers and what's driving them
+- Top 3-5 biggest losers and what's causing the declines
+- Sector trends and rotation patterns
+- Key market catalysts and news driving today's action`;
+    } else {
+      articleFocus = `Focus this article on SECTOR TRENDS and TRADING OPPORTUNITIES in today's market. Take an analytical perspective that covers:
+- Which sectors are leading/lagging today
+- Common themes among top movers (biotech, tech, energy, etc.)
+- Volume patterns and market breadth
+- Trading strategies for volatile markets like today
+- What traders should watch for the rest of the session`;
+    }
 
-Write an SEO-optimized blog article about today's extreme stock market movers using this REAL data:
+    const prompt = `You are a professional financial journalist writing for StockMarketToday.com, optimizing for the search term "Stock Market Today."
+
+Write a comprehensive market overview article using this REAL data:
 
 **Market Sentiment:** ${sentiment.text} (SPY: ${sentiment.spyChange}%)
-**Top Gainer:** ${topGainer.ticker} +${topGainer.change.toFixed(2)}% at $${topGainer.price.toFixed(2)}
-**Top Loser:** ${topLoser.ticker} ${topLoser.change.toFixed(2)}% at $${topLoser.price.toFixed(2)}
 
-**Additional Extreme Movers:**
-${gainers.slice(1, 5).map(s => `- ${s.ticker}: +${s.change.toFixed(2)}%`).join('\n')}
-${losers.slice(1, 3).map(s => `- ${s.ticker}: ${s.change.toFixed(2)}%`).join('\n')}
+**Top 5 Gainers Today:**
+${gainers.map((s, i) => `${i + 1}. ${s.ticker}: +${s.change.toFixed(2)}% at $${s.price.toFixed(2)}`).join('\n')}
 
-Write a detailed article (600-800 words) that:
-1. Has a compelling, SEO-friendly headline
-2. Opens with a strong summary paragraph
-3. Analyzes what's driving these extreme movements
-4. Provides actionable insights for retail investors
-5. Discusses sector trends and broader market context
-6. Includes a forward-looking conclusion
-7. **CRITICAL: Format ALL ticker symbols as cashtags (e.g., $NVDA, $TSLA, $AAPL, $SPY)**
+**Top 5 Losers Today:**
+${losers.map((s, i) => `${i + 1}. ${s.ticker}: ${s.change.toFixed(2)}% at $${s.price.toFixed(2)}`).join('\n')}
+
+${articleFocus}
+
+Article Requirements (800-1000 words):
+1. **SEO-optimized headline** starting with "Stock Market Today:" 
+2. **Strong opening paragraph** summarizing today's market action
+3. **Cover multiple top movers** (don't focus on just one stock)
+4. **Discuss broader market trends** and what's driving today's volatility
+5. **Include sector analysis** - which sectors are hot/cold
+6. **Add market context** - mention relevant news, Fed policy, economic data, or major catalysts
+7. **Provide actionable insights** for retail investors and traders
+8. **Use natural, engaging language** that appeals to both beginners and experienced traders
+9. **CRITICAL: Format ALL ticker symbols as cashtags** (e.g., $AAPL, $SPY, $NVDA)
 
 Format as JSON:
 {
-  "title": "SEO headline with keywords",
-  "excerpt": "Compelling 2-3 sentence summary",
-  "content": "Full HTML article with <h2>, <h3>, <p>, <strong> tags. Use $TICKER format.",
+  "title": "Stock Market Today: [compelling headline about today's market action]",
+  "excerpt": "3-sentence summary covering overall market performance and key movers",
+  "content": "Full HTML article with <h2>, <h3>, <p>, <strong> tags. Use $TICKER format throughout.",
   "category": "Market Analysis",
-  "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
-  "metaDescription": "155-character SEO description"
+  "keywords": ["stock market today", "market movers", "top gainers", "top losers", "stock trading"],
+  "metaDescription": "155-character description starting with 'Stock Market Today:'"
 }`;
 
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 3000,
+      max_tokens: 4000,
       messages: [{ role: 'user', content: prompt }]
     });
 
@@ -293,7 +343,7 @@ Format as JSON:
       author: 'Stock Market Today Editorial Team',
       articleType: 'daily',
       image: getRandomStockImage(),
-      readTime: '6 min read',
+      readTime: '8 min read',
       publishedAt: new Date()
     };
   } catch (error) {
@@ -374,42 +424,6 @@ async function saveArticle(articleData) {
       console.error('Error saving article:', error);
     }
     return null;
-  }
-}
-
-async function generateDailyArticles() {
-  try {
-    console.log('🤖 Generating daily market articles...');
-    
-    const marketData = await fetchMarketMovers();
-    if (!marketData) {
-      console.error('No market data available');
-      return;
-    }
-
-    const spyResponse = await fetch(`https://finnhub.io/api/v1/quote?symbol=SPY&token=${FINNHUB_API_KEY}`);
-    const spyData = await spyResponse.json();
-    
-    const spyChange = spyData.dp || 0;
-    let sentiment = spyChange > 1 ? 'Bullish' : spyChange < -1 ? 'Bearish' : 'Mixed';
-
-    const fullMarketData = {
-      gainers: marketData.gainers,
-      losers: marketData.losers,
-      sentiment: { text: sentiment, spyChange: spyChange.toFixed(2) }
-    };
-
-    for (let i = 0; i < 2; i++) {
-      const article = await generateDailyArticle(fullMarketData);
-      if (article) {
-        await saveArticle(article);
-        await new Promise(resolve => setTimeout(resolve, 3000));
-      }
-    }
-    
-    console.log('✅ Daily articles generation complete');
-  } catch (error) {
-    console.error('Error generating daily articles:', error);
   }
 }
 
@@ -514,7 +528,7 @@ app.get('/api/top-gainers', async (req, res) => {
     if (cachedMarketData.lastUpdated && (now - cachedMarketData.lastUpdated) < 12 * 60 * 1000) {
       console.log('📦 Returning cached gainers data');
       return res.json({
-        gainers: cachedMarketData.gainers.slice(0, 10),
+        gainers: cachedMarketData.gainers,
         lastUpdated: new Date(cachedMarketData.lastUpdated).toISOString(),
         source: 'cache'
       });
@@ -531,7 +545,7 @@ app.get('/api/top-gainers', async (req, res) => {
       };
 
       return res.json({
-        gainers: marketData.gainers.slice(0, 10),
+        gainers: marketData.gainers,
         lastUpdated: new Date(now).toISOString(),
         source: 'live'
       });
@@ -550,7 +564,7 @@ app.get('/api/top-losers', async (req, res) => {
     if (cachedMarketData.lastUpdated && (now - cachedMarketData.lastUpdated) < 12 * 60 * 1000) {
       console.log('📦 Returning cached losers data');
       return res.json({
-        losers: cachedMarketData.losers.slice(0, 10),
+        losers: cachedMarketData.losers,
         lastUpdated: new Date(cachedMarketData.lastUpdated).toISOString(),
         source: 'cache'
       });
@@ -567,7 +581,7 @@ app.get('/api/top-losers', async (req, res) => {
       };
 
       return res.json({
-        losers: marketData.losers.slice(0, 10),
+        losers: marketData.losers,
         lastUpdated: new Date(now).toISOString(),
         source: 'live'
       });
@@ -619,7 +633,7 @@ app.get('/health', (req, res) => {
 
 app.get('/', (req, res) => {
   res.json({
-    message: 'Stock Market API v5.1 - Extreme Movers Edition',
+    message: 'Stock Market API v5.1 - Real-Time Market Movers',
     endpoints: {
       health: '/health',
       topGainers: '/api/top-gainers',
@@ -648,12 +662,13 @@ scheduleArticleGeneration();
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('🚀 Stock Market API v5.1 - EXTREME MOVERS');
+  console.log('🚀 Stock Market API v5.1 - REAL-TIME MOVERS');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log(`📡 Port: ${PORT}`);
-  console.log('📊 Filters: NYSE/NASDAQ, 28%+ moves, 500k+ volume');
-  console.log('🤖 AI Blog Generation: ENABLED');
-  console.log('📝 Daily articles: 2x daily (10AM, 2PM)');
+  console.log('📊 Data Source: Finviz (Top 5 gainers/losers, 500k+ volume)');
+  console.log('🤖 AI Blog: "Stock Market Today" focused articles');
+  console.log('📝 Daily articles: 2x daily (10AM, 2PM) - Market Days Only');
+  console.log('📚 Evergreen articles: 2x weekly (Mon & Thu, 9AM)');
   console.log('🔄 Data Updates: Every 12 minutes');
   console.log(`📅 Market Status: ${isMarketOpen() ? 'OPEN' : 'CLOSED'}`);
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
