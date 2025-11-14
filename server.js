@@ -180,7 +180,7 @@ Format as JSON:
       slug: createSlug(articleData.title),
       author: 'Stock Market Today Editorial Team',
       articleType: 'daily',
-      image: `https://picsum.photos/seed/${Date.now()}/1200/630`,
+      image: `https://images.pexels.com/photos/534216/pexels-photo-534216.jpeg?auto=compress&cs=tinysrgb&w=1200&h=630&fit=crop`,
       readTime: '6 min read',
       publishedAt: new Date()
     };
@@ -257,7 +257,7 @@ Format as JSON:
       slug: createSlug(articleData.title),
       author: 'Stock Market Today Editorial Team',
       articleType: 'evergreen',
-      image: `https://picsum.photos/seed/invest${Date.now()}/1200/630`,
+      image: `https://images.pexels.com/photos/210607/pexels-photo-210607.jpeg?auto=compress&cs=tinysrgb&w=1200&h=630&fit=crop`,
       readTime: '10 min read',
       publishedAt: new Date()
     };
