@@ -204,8 +204,11 @@ async function fetchMarketMovers() {
     const response = await fetch(url);
     const data = await response.json();
     
+    // DEBUG: Log what we actually received
+    console.log('Alpha Vantage Response:', JSON.stringify(data).substring(0, 200));
+    
     if (data.Note) {
-      console.warn('⚠️ Alpha Vantage API rate limit hit - using cached data');
+      console.warn('⚠️ Alpha Vantage API rate limit:', data.Note);
       return null;
     }
     
@@ -214,8 +217,18 @@ async function fetchMarketMovers() {
       return null;
     }
     
+    if (data.Information) {
+      console.warn('⚠️ Alpha Vantage Info:', data.Information);
+      return null;
+    }
+    
     if (!data.top_gainers || !data.top_losers) {
-      console.error('❌ Invalid Alpha Vantage response');
+      console.error('❌ Missing gainers/losers data. Keys in response:', Object.keys(data));
+      return null;
+    }
+    
+    if (data.top_gainers.length === 0) {
+      console.warn('⚠️ Alpha Vantage returned empty gainers list');
       return null;
     }
     
@@ -249,7 +262,7 @@ async function fetchMarketMovers() {
     
     return { gainers, losers };
   } catch (error) {
-    console.error('💥 Error fetching from Alpha Vantage:', error);
+    console.error('💥 Error fetching from Alpha Vantage:', error.message);
     return null;
   }
 }
