@@ -15,6 +15,147 @@ const MONGODB_URI = process.env.MONGODB_URI;
 
 const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
+// 100+ Stock Market Images - Rotating Array
+const STOCK_MARKET_IMAGES = [
+  'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1535320903710-d993d3d77d29?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1579532537598-459ecdaf39cc?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1642790106117-e829e14a795f?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1560221328-12fe60f83ab8?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1563986768609-322da13575f3?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1553729459-efe14ef6055d?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1518186285589-2f7649de83e0?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1543286386-713bdd548da4?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1565514020179-026b92b84bb6?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1535378620166-273708d44e4c?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1526628953301-3e589a6a8b74?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1560472355-536de3962603?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1642790551116-18e150f248e8?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1605792657660-596af9009e82?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1507925921958-8a62f3d1a50d?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1565514020179-026b92b84bb6?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1553729459-efe14ef6055d?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1579532536935-619928decd08?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1642790106117-e829e14a795f?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1535320903710-d993d3d77d29?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1543286386-713bdd548da4?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1565514020179-026b92b84bb6?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1563986768609-322da13575f3?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1579532537598-459ecdaf39cc?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1560221328-12fe60f83ab8?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1518186285589-2f7649de83e0?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1535378620166-273708d44e4c?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1526628953301-3e589a6a8b74?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1560472355-536de3962603?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1642790551116-18e150f248e8?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1605792657660-596af9009e82?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1507925921958-8a62f3d1a50d?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1579532536935-619928decd08?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1535320903710-d993d3d77d29?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1543286386-713bdd548da4?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1565514020179-026b92b84bb6?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1563986768609-322da13575f3?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1579532537598-459ecdaf39cc?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1560221328-12fe60f83ab8?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1518186285589-2f7649de83e0?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1535378620166-273708d44e4c?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1526628953301-3e589a6a8b74?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1560472355-536de3962603?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1642790551116-18e150f248e8?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1605792657660-596af9009e82?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1507925921958-8a62f3d1a50d?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1579532536935-619928decd08?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1642790106117-e829e14a795f?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1535320903710-d993d3d77d29?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1543286386-713bdd548da4?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1565514020179-026b92b84bb6?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1563986768609-322da13575f3?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1579532537598-459ecdaf39cc?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1560221328-12fe60f83ab8?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1518186285589-2f7649de83e0?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1535378620166-273708d44e4c?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1526628953301-3e589a6a8b74?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1560472355-536de3962603?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1642790551116-18e150f248e8?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1605792657660-596af9009e82?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1507925921958-8a62f3d1a50d?w=1200&h=630&fit=crop',
+  'https://images.unsplash.com/photo-1579532536935-619928decd08?w=1200&h=630&fit=crop'
+];
+
+// US Stock Market Holidays 2025 (NYSE/NASDAQ closed)
+const MARKET_HOLIDAYS_2025 = [
+  '2025-01-01', // New Year's Day
+  '2025-01-20', // MLK Jr. Day
+  '2025-02-17', // Presidents Day
+  '2025-04-18', // Good Friday
+  '2025-05-26', // Memorial Day
+  '2025-06-19', // Juneteenth
+  '2025-07-04', // Independence Day
+  '2025-09-01', // Labor Day
+  '2025-11-27', // Thanksgiving
+  '2025-12-25'  // Christmas
+];
+
+// Get random image from rotating array
+function getRandomStockImage() {
+  return STOCK_MARKET_IMAGES[Math.floor(Math.random() * STOCK_MARKET_IMAGES.length)];
+}
+
+// Check if market is open today
+function isMarketOpen() {
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const dateString = now.toISOString().split('T')[0];
+  
+  // Weekend check (0 = Sunday, 6 = Saturday)
+  if (dayOfWeek === 0 || dayOfWeek === 6) {
+    return false;
+  }
+  
+  // Holiday check
+  if (MARKET_HOLIDAYS_2025.includes(dateString)) {
+    return false;
+  }
+  
+  return true;
+}
+
 // Connect to MongoDB
 mongoose.connect(MONGODB_URI)
 .then(() => console.log('✅ MongoDB connected successfully'))
@@ -180,7 +321,7 @@ Format as JSON:
       slug: createSlug(articleData.title),
       author: 'Stock Market Today Editorial Team',
       articleType: 'daily',
-      image: `https://images.pexels.com/photos/534216/pexels-photo-534216.jpeg?auto=compress&cs=tinysrgb&w=1200&h=630&fit=crop`,
+      image: getRandomStockImage(),
       readTime: '6 min read',
       publishedAt: new Date()
     };
@@ -257,7 +398,7 @@ Format as JSON:
       slug: createSlug(articleData.title),
       author: 'Stock Market Today Editorial Team',
       articleType: 'evergreen',
-      image: `https://images.pexels.com/photos/210607/pexels-photo-210607.jpeg?auto=compress&cs=tinysrgb&w=1200&h=630&fit=crop`,
+      image: getRandomStockImage(),
       readTime: '10 min read',
       publishedAt: new Date()
     };
@@ -284,7 +425,7 @@ async function saveArticle(articleData) {
   }
 }
 
-// Generate daily articles (3 per day)
+// Generate daily articles (2 per day)
 async function generateDailyArticles() {
   try {
     console.log('🤖 Generating daily market articles...');
@@ -309,8 +450,8 @@ async function generateDailyArticles() {
       sentiment: { text: sentiment, spyChange: spyChange.toFixed(2) }
     };
 
-    // Generate 3 daily articles
-    for (let i = 0; i < 3; i++) {
+    // Generate 2 daily articles
+    for (let i = 0; i < 2; i++) {
       const article = await generateDailyArticle(fullMarketData);
       if (article) {
         await saveArticle(article);
@@ -345,27 +486,32 @@ function scheduleArticleGeneration() {
   let evergreenCount = 0;
   
   setInterval(() => {
+    // Only run if market is open
+    if (!isMarketOpen()) {
+      return;
+    }
+    
     const now = new Date();
     const hour = now.getHours();
     const minute = now.getMinutes();
     const dayOfWeek = now.getDay();
     
-    // Generate daily articles at 6 AM, 10 AM, 2 PM, 6 PM
-    const dailyTimes = [6, 10, 14, 18];
+    // Generate daily articles at 10 AM and 2 PM on market days only
+    const dailyTimes = [10, 14];
     if (dailyTimes.includes(hour) && minute === 0) {
       const today = now.toDateString();
       if (lastDailyGeneration !== today + hour) {
-        console.log(`⏰ Scheduled daily generation at ${hour}:00`);
+        console.log(`⏰ Scheduled daily generation at ${hour}:00 (Market Open)`);
         generateDailyArticles();
         lastDailyGeneration = today + hour;
       }
     }
     
-    // Generate evergreen articles on Monday and Thursday at 9 AM
+    // Generate evergreen articles on Monday and Thursday at 9 AM (market days)
     if ((dayOfWeek === 1 || dayOfWeek === 4) && hour === 9 && minute === 0) {
       const weekKey = `${now.getFullYear()}-W${Math.ceil(now.getDate() / 7)}-${dayOfWeek}`;
       if (evergreenCount !== weekKey) {
-        console.log(`⏰ Scheduled evergreen generation`);
+        console.log(`⏰ Scheduled evergreen generation (Market Day)`);
         generateEvergreenContent();
         evergreenCount = weekKey;
       }
@@ -565,7 +711,8 @@ app.get('/health', (req, res) => {
     status: 'ok', 
     timestamp: new Date().toISOString(),
     mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-    cacheStatus: cachedMarketData.lastUpdated ? 'Active' : 'Empty'
+    cacheStatus: cachedMarketData.lastUpdated ? 'Active' : 'Empty',
+    marketStatus: isMarketOpen() ? 'Open' : 'Closed'
   });
 });
 
@@ -607,11 +754,13 @@ app.listen(PORT, () => {
   console.log(`📡 Port: ${PORT}`);
   console.log('📊 Market Coverage: ALL NYSE/NASDAQ stocks');
   console.log('🤖 AI Blog Generation: ENABLED');
-  console.log('📝 Daily articles: 4x daily (6AM, 10AM, 2PM, 6PM)');
+  console.log('📝 Daily articles: 2x daily (10AM, 2PM) - Market Days Only');
   console.log('📚 Evergreen articles: 2x weekly (Mon & Thu, 9AM)');
   console.log('💾 Storage: MongoDB (permanent)');
   console.log('🔍 SEO: Optimized for search + LLM indexing');
   console.log('💰 Cashtags: $TICKER format for clickable stocks');
+  console.log('🖼️  Images: 100+ rotating stock market photos');
+  console.log(`📅 Market Status: ${isMarketOpen() ? 'OPEN' : 'CLOSED'}`);
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 });
 
