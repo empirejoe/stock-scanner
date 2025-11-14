@@ -106,27 +106,29 @@ function generateChartData(changePercent) {
   return data;
 }
 
-const cheerio = require('cheerio'); // Add this to package.json
+const cheerio = require('cheerio');
 
-// Fetch market movers from Finviz (via scraping)
+// Fetch market movers from Finviz (scraping specific screener pages)
 async function fetchMarketMovers() {
   try {
     console.log('📊 Scraping Finviz for real-time top movers...');
     
     const headers = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     };
     
-    // Fetch top gainers
-    const gainersUrl = 'https://finviz.com/screener.ashx?v=111&s=ta_topgainers&f=sh_avgvol_o500';
+    // Fetch top gainers (sorted by % change, 500k+ volume)
+    const gainersUrl = 'https://finviz.com/screener.ashx?v=111&f=sh_curvol_o500&ft=4&o=change';
+    console.log('🔍 Fetching gainers from Finviz...');
     const gainersResponse = await fetch(gainersUrl, { headers });
     const gainersHtml = await gainersResponse.text();
     
-    // Small delay to avoid rate limiting
+    // Delay to be respectful
     await new Promise(resolve => setTimeout(resolve, 2000));
     
-    // Fetch top losers
-    const losersUrl = 'https://finviz.com/screener.ashx?v=111&s=ta_toplosers&f=sh_avgvol_o500';
+    // Fetch top losers (sorted by % change descending, 500k+ volume)
+    const losersUrl = 'https://finviz.com/screener.ashx?v=111&f=sh_curvol_o500&ft=4&o=-change';
+    console.log('🔍 Fetching losers from Finviz...');
     const losersResponse = await fetch(losersUrl, { headers });
     const losersHtml = await losersResponse.text();
     
@@ -134,16 +136,20 @@ async function fetchMarketMovers() {
     const $gainers = cheerio.load(gainersHtml);
     const gainers = [];
     
-    $gainers('table.table-light tr').each((i, row) => {
+    $gainers('table.styled-table-new tr').each((i, row) => {
       if (i === 0) return; // Skip header
       const cols = $gainers(row).find('td');
       if (cols.length >= 11) {
-        const ticker = $gainers(cols[1]).text().trim();
-        const price = parseFloat($gainers(cols[8]).text().replace(/[^0-9.]/g, ''));
-        const change = parseFloat($gainers(cols[9]).text().replace(/[^0-9.-]/g, ''));
-        const volume = parseInt($gainers(cols[10]).text().replace(/[^0-9]/g, ''));
+        const ticker = $gainers(cols[1]).find('a').text().trim();
+        const priceText = $gainers(cols[8]).text().trim();
+        const changeText = $gainers(cols[9]).text().trim();
+        const volumeText = $gainers(cols[10]).text().trim();
         
-        if (ticker && price && change && volume >= 500000 && Math.abs(change) >= 28) {
+        const price = parseFloat(priceText);
+        const change = parseFloat(changeText.replace('%', ''));
+        const volume = parseInt(volumeText.replace(/,/g, ''));
+        
+        if (ticker && !isNaN(price) && !isNaN(change) && !isNaN(volume)) {
           gainers.push({
             ticker,
             name: ticker,
@@ -160,16 +166,20 @@ async function fetchMarketMovers() {
     const $losers = cheerio.load(losersHtml);
     const losers = [];
     
-    $losers('table.table-light tr').each((i, row) => {
+    $losers('table.styled-table-new tr').each((i, row) => {
       if (i === 0) return;
       const cols = $losers(row).find('td');
       if (cols.length >= 11) {
-        const ticker = $losers(cols[1]).text().trim();
-        const price = parseFloat($losers(cols[8]).text().replace(/[^0-9.]/g, ''));
-        const change = parseFloat($losers(cols[9]).text().replace(/[^0-9.-]/g, ''));
-        const volume = parseInt($losers(cols[10]).text().replace(/[^0-9]/g, ''));
+        const ticker = $losers(cols[1]).find('a').text().trim();
+        const priceText = $losers(cols[8]).text().trim();
+        const changeText = $losers(cols[9]).text().trim();
+        const volumeText = $losers(cols[10]).text().trim();
         
-        if (ticker && price && change && volume >= 500000 && Math.abs(change) >= 28) {
+        const price = parseFloat(priceText);
+        const change = parseFloat(changeText.replace('%', ''));
+        const volume = parseInt(volumeText.replace(/,/g, ''));
+        
+        if (ticker && !isNaN(price) && !isNaN(change) && !isNaN(volume)) {
           losers.push({
             ticker,
             name: ticker,
@@ -182,19 +192,23 @@ async function fetchMarketMovers() {
       }
     });
     
-    console.log(`🚀 Found ${gainers.length} gainers (28%+, 500k+ vol)`);
-    console.log(`📉 Found ${losers.length} losers (28%-, 500k+ vol)`);
+    // Take top 5 from each
+    const topGainers = gainers.slice(0, 5);
+    const topLosers = losers.slice(0, 5);
     
-    if (gainers.length > 0) {
-      console.log(`   Top: ${gainers[0].ticker} +${gainers[0].change.toFixed(2)}%`);
+    console.log(`🚀 Scraped ${topGainers.length} top gainers from Finviz`);
+    console.log(`📉 Scraped ${topLosers.length} top losers from Finviz`);
+    
+    if (topGainers.length > 0) {
+      console.log(`   #1 Gainer: ${topGainers[0].ticker} +${topGainers[0].change.toFixed(2)}% @ $${topGainers[0].price.toFixed(2)}`);
     }
-    if (losers.length > 0) {
-      console.log(`   Top: ${losers[0].ticker} ${losers[0].change.toFixed(2)}%`);
+    if (topLosers.length > 0) {
+      console.log(`   #1 Loser: ${topLosers[0].ticker} ${topLosers[0].change.toFixed(2)}% @ $${topLosers[0].price.toFixed(2)}`);
     }
     
     return { 
-      gainers: gainers.slice(0, 20), 
-      losers: losers.slice(0, 20) 
+      gainers: topGainers, 
+      losers: topLosers 
     };
     
   } catch (error) {
