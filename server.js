@@ -151,12 +151,13 @@ Write a detailed article (600-800 words) that:
 5. Discusses sector trends and broader market context
 6. Includes a forward-looking conclusion
 7. Uses natural language optimized for both humans and AI indexing
+8. **CRITICAL: Format ALL ticker symbols as cashtags with dollar signs (e.g., $NVDA, $TSLA, $AAPL, $SPY) throughout the entire article - this makes them clickable for readers**
 
 Format as JSON:
 {
   "title": "SEO headline with keywords",
   "excerpt": "Compelling 2-3 sentence summary with key stats",
-  "content": "Full HTML article with <h2>, <h3>, <p>, <strong> tags for structure",
+  "content": "Full HTML article with <h2>, <h3>, <p>, <strong> tags for structure. Use $TICKER format for ALL stock symbols.",
   "category": "Market Analysis",
   "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
   "metaDescription": "155-character SEO meta description with keywords"
@@ -168,20 +169,21 @@ Format as JSON:
       messages: [{ role: 'user', content: prompt }]
     });
 
-// Extract JSON from markdown code blocks if present
-let responseText = message.content[0].text;
-if (responseText.includes('```json')) {
-  responseText = responseText.split('```json')[1].split('```')[0].trim();
-} else if (responseText.includes('```')) {
-  responseText = responseText.split('```')[1].split('```')[0].trim();
-}
-const articleData = JSON.parse(responseText);    
+    // Extract JSON from markdown code blocks if present
+    let responseText = message.content[0].text;
+    if (responseText.includes('```json')) {
+      responseText = responseText.split('```json')[1].split('```')[0].trim();
+    } else if (responseText.includes('```')) {
+      responseText = responseText.split('```')[1].split('```')[0].trim();
+    }
+    const articleData = JSON.parse(responseText);
+    
     return {
       ...articleData,
       slug: createSlug(articleData.title),
       author: 'Stock Market Today Editorial Team',
       articleType: 'daily',
-      image: `https://source.unsplash.com/1200x630/?stock-market,trading,wall-street&sig=${Date.now()}`,
+      image: `https://picsum.photos/seed/${Date.now()}/1200/630`,
       readTime: '6 min read',
       publishedAt: new Date()
     };
@@ -226,12 +228,13 @@ Requirements:
 5. Use natural, engaging language optimized for both human readers and AI indexing
 6. Include practical takeaways and next steps
 7. Focus on timeless principles, not current events
+8. **IMPORTANT: Format any stock ticker symbols mentioned as cashtags (e.g., $SPY, $QQQ, $AAPL, $VOO) to make them clickable**
 
 Format as JSON:
 {
   "title": "SEO-optimized title based on the topic",
   "excerpt": "Compelling 3-sentence summary that explains the value",
-  "content": "Full HTML article with proper <h2>, <h3>, <p>, <ul>, <li>, <strong> tags",
+  "content": "Full HTML article with proper <h2>, <h3>, <p>, <ul>, <li>, <strong> tags. Use $TICKER format for any stock symbols.",
   "category": "Choose: Educational, Trading Strategies, or Investment Guide",
   "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
   "metaDescription": "155-character SEO description"
@@ -243,21 +246,21 @@ Format as JSON:
       messages: [{ role: 'user', content: prompt }]
     });
 
-// Extract JSON from markdown code blocks if present
-let responseText = message.content[0].text;
-if (responseText.includes('```json')) {
-  responseText = responseText.split('```json')[1].split('```')[0].trim();
-} else if (responseText.includes('```')) {
-  responseText = responseText.split('```')[1].split('```')[0].trim();
-}
-const articleData = JSON.parse(responseText);
+    // Extract JSON from markdown code blocks if present
+    let responseText = message.content[0].text;
+    if (responseText.includes('```json')) {
+      responseText = responseText.split('```json')[1].split('```')[0].trim();
+    } else if (responseText.includes('```')) {
+      responseText = responseText.split('```')[1].split('```')[0].trim();
+    }
+    const articleData = JSON.parse(responseText);
     
     return {
       ...articleData,
       slug: createSlug(articleData.title),
       author: 'Stock Market Today Editorial Team',
       articleType: 'evergreen',
-      image: `https://source.unsplash.com/1200x630/?finance,investment,education&sig=${Date.now()}`,
+      image: `https://picsum.photos/seed/invest${Date.now()}/1200/630`,
       readTime: '10 min read',
       publishedAt: new Date()
     };
@@ -611,6 +614,7 @@ app.listen(PORT, () => {
   console.log('📚 Evergreen articles: 2x weekly (Mon & Thu, 9AM)');
   console.log('💾 Storage: MongoDB (permanent)');
   console.log('🔍 SEO: Optimized for search + LLM indexing');
+  console.log('💰 Cashtags: $TICKER format for clickable stocks');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 });
 
