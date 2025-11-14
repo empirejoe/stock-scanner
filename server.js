@@ -194,56 +194,74 @@ function generateChartData(changePercent) {
   return data;
 }
 
-// Fetch market movers from Finnhub - FREE & RELIABLE
+// Fetch market movers from Finnhub - REAL-TIME ALL NYSE/NASDAQ STOCKS
 async function fetchMarketMovers() {
   try {
-    console.log('📊 Fetching market movers from Finnhub...');
+    console.log('📊 Fetching ALL NYSE/NASDAQ stocks from Finnhub...');
     
-    // Fetch US market movers
-    const url = `https://finnhub.io/api/v1/stock/metric?symbol=SPY&metric=all&token=${FINNHUB_API_KEY}`;
+    // Step 1: Get all US stock symbols
+    const symbolsUrl = `https://finnhub.io/api/v1/stock/symbol?exchange=US&token=${FINNHUB_API_KEY}`;
+    const symbolsResponse = await fetch(symbolsUrl);
+    const allSymbols = await symbolsResponse.json();
     
-    // Get list of active US stocks
-    const stocksUrl = `https://finnhub.io/api/v1/stock/symbol?exchange=US&token=${FINNHUB_API_KEY}`;
-    const stocksResponse = await fetch(stocksUrl);
-    const allStocks = await stocksResponse.json();
+    // Step 2: Filter for NYSE and NASDAQ only (exclude OTC, Pink Sheets, etc.)
+    const nyseNasdaqStocks = allSymbols.filter(stock => 
+      stock.type === 'Common Stock' &&
+      (stock.mic === 'XNYS' || stock.mic === 'XNAS') && // NYSE or NASDAQ market identifiers
+      !stock.symbol.includes('.') && // Exclude class shares
+      !stock.symbol.includes('-') && // Exclude warrants/units
+      stock.symbol.length <= 5 // Typical stock symbols
+    );
     
-    // Get quotes for top stocks
-    const topStocks = allStocks.filter(s => 
-      s.type === 'Common Stock' && 
-      !s.symbol.includes('.')
-    ).slice(0, 100); // Get top 100 to analyze
+    console.log(`✅ Found ${nyseNasdaqStocks.length} NYSE/NASDAQ stocks`);
+    
+    // Step 3: Sample stocks to check (limit to avoid hitting rate limits)
+    const sampleSize = Math.min(300, nyseNasdaqStocks.length);
+    const sampled = nyseNasdaqStocks
+      .sort(() => 0.5 - Math.random()) // Randomize
+      .slice(0, sampleSize);
     
     const stockData = [];
+    const batchSize = 20; // Process 20 at a time
     
-    // Fetch quotes for each stock (batched to avoid rate limits)
-    for (let i = 0; i < Math.min(topStocks.length, 50); i++) {
-      try {
-        const quoteUrl = `https://finnhub.io/api/v1/quote?symbol=${topStocks[i].symbol}&token=${FINNHUB_API_KEY}`;
-        const quoteResponse = await fetch(quoteUrl);
-        const quote = await quoteResponse.json();
-        
-        if (quote.c && quote.pc && quote.c > 0 && quote.pc > 0) {
-          const change = ((quote.c - quote.pc) / quote.pc) * 100;
+    // Step 4: Fetch quotes in batches
+    for (let i = 0; i < sampled.length; i += batchSize) {
+      const batch = sampled.slice(i, i + batchSize);
+      
+      const promises = batch.map(async (stock) => {
+        try {
+          const url = `https://finnhub.io/api/v1/quote?symbol=${stock.symbol}&token=${FINNHUB_API_KEY}`;
+          const response = await fetch(url);
+          const quote = await response.json();
           
-          stockData.push({
-            ticker: topStocks[i].symbol,
-            name: topStocks[i].description || topStocks[i].symbol,
-            price: quote.c,
-            change: change,
-            volume: quote.v || 0,
-            chartData: generateChartData(change)
-          });
+          if (quote.c && quote.pc && quote.c > 0 && quote.pc > 0 && quote.c > 1) { // Exclude penny stocks under $1
+            const change = ((quote.c - quote.pc) / quote.pc) * 100;
+            return {
+              ticker: stock.symbol,
+              name: stock.description || stock.symbol,
+              price: quote.c,
+              change: change,
+              volume: quote.v || 0,
+              chartData: generateChartData(change)
+            };
+          }
+        } catch (err) {
+          // Skip on error
         }
-        
-        // Small delay to respect rate limits
-        await new Promise(resolve => setTimeout(resolve, 100));
-      } catch (err) {
-        console.log(`Skipped ${topStocks[i].symbol}`);
+        return null;
+      });
+      
+      const results = await Promise.all(promises);
+      stockData.push(...results.filter(r => r !== null));
+      
+      // Delay between batches to respect rate limits (60/min)
+      if (i + batchSize < sampled.length) {
+        await new Promise(resolve => setTimeout(resolve, 200));
       }
     }
     
     if (stockData.length === 0) {
-      console.error('❌ No valid stock data received');
+      console.error('❌ No valid stock data received from Finnhub');
       return null;
     }
     
@@ -259,7 +277,7 @@ async function fetchMarketMovers() {
     
     console.log(`🚀 Top Gainer: ${gainers[0]?.ticker} +${gainers[0]?.change.toFixed(2)}% @ $${gainers[0]?.price.toFixed(2)}`);
     console.log(`📉 Top Loser: ${losers[0]?.ticker} ${losers[0]?.change.toFixed(2)}% @ $${losers[0]?.price.toFixed(2)}`);
-    console.log(`✅ Fetched data for ${stockData.length} stocks from Finnhub`);
+    console.log(`✅ Analyzed ${stockData.length} NYSE/NASDAQ stocks in real-time`);
     
     return { gainers, losers };
   } catch (error) {
