@@ -204,25 +204,25 @@ async function fetchMarketMovers() {
     const symbolsResponse = await fetch(symbolsUrl);
     const allSymbols = await symbolsResponse.json();
     
-    // Step 2: Filter for NYSE and NASDAQ only (exclude OTC, Pink Sheets, etc.)
+    // Step 2: Filter for NYSE and NASDAQ only
     const nyseNasdaqStocks = allSymbols.filter(stock => 
       stock.type === 'Common Stock' &&
-      (stock.mic === 'XNYS' || stock.mic === 'XNAS') && // NYSE or NASDAQ market identifiers
-      !stock.symbol.includes('.') && // Exclude class shares
-      !stock.symbol.includes('-') && // Exclude warrants/units
-      stock.symbol.length <= 5 // Typical stock symbols
+      (stock.mic === 'XNYS' || stock.mic === 'XNAS') &&
+      !stock.symbol.includes('.') &&
+      !stock.symbol.includes('-') &&
+      stock.symbol.length <= 5
     );
     
     console.log(`✅ Found ${nyseNasdaqStocks.length} NYSE/NASDAQ stocks`);
     
-    // Step 3: Sample stocks to check (limit to avoid hitting rate limits)
-    const sampleSize = Math.min(300, nyseNasdaqStocks.length);
-    const sampled = nyseNasdaqStocks
-      .sort(() => 0.5 - Math.random()) // Randomize
-      .slice(0, sampleSize);
+    // Step 3: Check MORE stocks (800-1000) to find real top movers
+    const sampleSize = Math.min(1000, nyseNasdaqStocks.length);
+    const sampled = nyseNasdaqStocks.slice(0, sampleSize); // Don't randomize - check first 1000
     
     const stockData = [];
-    const batchSize = 20; // Process 20 at a time
+    const batchSize = 30; // Larger batches
+    
+    console.log(`🔍 Analyzing ${sampleSize} stocks for top movers...`);
     
     // Step 4: Fetch quotes in batches
     for (let i = 0; i < sampled.length; i += batchSize) {
@@ -234,16 +234,20 @@ async function fetchMarketMovers() {
           const response = await fetch(url);
           const quote = await response.json();
           
-          if (quote.c && quote.pc && quote.c > 0 && quote.pc > 0 && quote.c > 1) { // Exclude penny stocks under $1
+          if (quote.c && quote.pc && quote.c > 0 && quote.pc > 0 && quote.c > 1) {
             const change = ((quote.c - quote.pc) / quote.pc) * 100;
-            return {
-              ticker: stock.symbol,
-              name: stock.description || stock.symbol,
-              price: quote.c,
-              change: change,
-              volume: quote.v || 0,
-              chartData: generateChartData(change)
-            };
+            
+            // Only include stocks with significant moves
+            if (Math.abs(change) > 0.5) { // At least 0.5% move
+              return {
+                ticker: stock.symbol,
+                name: stock.description || stock.symbol,
+                price: quote.c,
+                change: change,
+                volume: quote.v || 0,
+                chartData: generateChartData(change)
+              };
+            }
           }
         } catch (err) {
           // Skip on error
@@ -254,9 +258,14 @@ async function fetchMarketMovers() {
       const results = await Promise.all(promises);
       stockData.push(...results.filter(r => r !== null));
       
-      // Delay between batches to respect rate limits (60/min)
+      // Progress log
+      if ((i + batchSize) % 300 === 0) {
+        console.log(`  📊 Processed ${Math.min(i + batchSize, sampled.length)}/${sampled.length} stocks...`);
+      }
+      
+      // Minimal delay (Finnhub allows 60/min)
       if (i + batchSize < sampled.length) {
-        await new Promise(resolve => setTimeout(resolve, 200));
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
     
@@ -265,6 +274,7 @@ async function fetchMarketMovers() {
       return null;
     }
     
+    // Get top 20 gainers and losers
     const gainers = stockData
       .filter(s => s.change > 0)
       .sort((a, b) => b.change - a.change)
