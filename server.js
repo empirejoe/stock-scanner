@@ -4,6 +4,7 @@ const fetch = require('node-fetch');
 const Anthropic = require('@anthropic-ai/sdk');
 const mongoose = require('mongoose');
 const cheerio = require('cheerio');
+const sgMail = require('@sendgrid/mail');
 
 const app = express();
 app.use(cors());
@@ -13,8 +14,11 @@ const POLYGON_API_KEY = 't_RrZpaMlwv9kmfeYM0I0x71Wn_DmlOH';
 const FINNHUB_API_KEY = 'd3n5abhr01qk6515r7fgd3n5abhr01qk6515r7g0';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const MONGODB_URI = process.env.MONGODB_URI;
+const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
+const SENDGRID_FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL || 'alerts@stockmarkettoday.com';
 
 const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+sgMail.setApiKey(SENDGRID_API_KEY);
 
 // 100+ US Stock Market Images - Diverse & Professional
 const STOCK_MARKET_IMAGES = [
@@ -69,8 +73,8 @@ function isMarketOpen() {
 }
 
 mongoose.connect(MONGODB_URI)
-.then(() => console.log('✅ MongoDB connected successfully'))
-.catch(err => console.error('❌ MongoDB connection error:', err));
+.then(() => console.log('? MongoDB connected successfully'))
+.catch(err => console.error('? MongoDB connection error:', err));
 
 const articleSchema = new mongoose.Schema({
   title: { type: String, required: true },
@@ -88,9 +92,22 @@ const articleSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
+const subscriberSchema = new mongoose.Schema({
+  email: { type: String, required: true, unique: true },
+  phone: String,
+  interest: String,
+  source: { type: String, default: 'StockMarketToday.com' },
+  subscribed: { type: Boolean, default: true },
+  subscribedAt: { type: Date, default: Date.now },
+  unsubscribedAt: Date,
+  lastEmailSent: Date
+});
+
 const Article = mongoose.model('Article', articleSchema);
+const Subscriber = mongoose.model('Subscriber', subscriberSchema);
 
 let cachedMarketData = { gainers: [], losers: [], lastUpdated: null };
+let recentlyMentionedStocks = [];
 
 function generateChartData(changePercent) {
   const points = 7;
@@ -110,28 +127,24 @@ function generateChartData(changePercent) {
 // Fetch market movers from Finviz (scraping)
 async function fetchMarketMovers() {
   try {
-    console.log('📊 Scraping Finviz for real-time top movers...');
+    console.log('? Scraping Finviz for real-time top movers...');
     
     const headers = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     };
     
-    // Fetch top gainers (DESCENDING order - highest % first)
     const gainersUrl = 'https://finviz.com/screener.ashx?v=111&f=sh_curvol_o500&ft=4&o=-change';
-    console.log('🔍 Fetching gainers from Finviz...');
+    console.log('? Fetching gainers from Finviz...');
     const gainersResponse = await fetch(gainersUrl, { headers });
     const gainersHtml = await gainersResponse.text();
     
-    // Delay
     await new Promise(resolve => setTimeout(resolve, 2000));
     
-    // Fetch top losers (ASCENDING order - most negative % first)
     const losersUrl = 'https://finviz.com/screener.ashx?v=111&f=sh_curvol_o500&ft=4&o=change';
-    console.log('🔍 Fetching losers from Finviz...');
+    console.log('? Fetching losers from Finviz...');
     const losersResponse = await fetch(losersUrl, { headers });
     const losersHtml = await losersResponse.text();
     
-    // Parse gainers
     const $gainers = cheerio.load(gainersHtml);
     const gainers = [];
     
@@ -163,7 +176,6 @@ async function fetchMarketMovers() {
       }
     });
     
-    // Parse losers
     const $losers = cheerio.load(losersHtml);
     const losers = [];
     
@@ -196,12 +208,11 @@ async function fetchMarketMovers() {
       }
     });
     
-    // Take top 5 from each
     const topGainers = gainers.slice(0, 5);
     const topLosers = losers.slice(0, 5);
     
-    console.log(`🚀 Scraped ${topGainers.length} top gainers from Finviz`);
-    console.log(`📉 Scraped ${topLosers.length} top losers from Finviz`);
+    console.log(`? Scraped ${topGainers.length} top gainers from Finviz`);
+    console.log(`? Scraped ${topLosers.length} top losers from Finviz`);
     
     if (topGainers.length > 0) {
       console.log(`   #1 Gainer: ${topGainers[0].ticker} +${topGainers[0].change.toFixed(2)}%`);
@@ -216,7 +227,7 @@ async function fetchMarketMovers() {
     };
     
   } catch (error) {
-    console.error('💥 Error scraping Finviz:', error.message);
+    console.error('? Error scraping Finviz:', error.message);
     return { gainers: [], losers: [] };
   }
 }
@@ -225,9 +236,240 @@ function createSlug(title) {
   return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
 
+function extractStockTickers(text) {
+  const tickerRegex = /\$([A-Z]{2,5})\b/g;
+  const matches = text.match(tickerRegex) || [];
+  return [...new Set(matches.map(m => m.replace('$', '')))];
+}
+
+// EMAIL TEMPLATE
+function createDailyEmailTemplate(data) {
+  const { gainers, losers, sentiment, articles } = data;
+  
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock Market Today - Daily Recap</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; background-color: #1E2A38;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #1E2A38;">
+    <tr>
+      <td align="center" style="padding: 40px 20px;">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #0F1419; border-radius: 16px; overflow: hidden;">
+          
+          <!-- Header -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #FF8C00 0%, #FF6B00 100%); padding: 30px; text-align: center;">
+              <h1 style="color: #ffffff; font-size: 32px; font-weight: 900; margin: 0 0 10px 0;">? STOCK MARKET TODAY</h1>
+              <p style="color: #ffffff; font-size: 16px; margin: 0; opacity: 0.9;">Your Daily Market Recap</p>
+            </td>
+          </tr>
+
+          <!-- Market Sentiment -->
+          <tr>
+            <td style="padding: 30px;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="background: ${sentiment.color === 'green' ? 'rgba(16, 185, 129, 0.1)' : sentiment.color === 'red' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(251, 146, 60, 0.1)'}; border: 2px solid ${sentiment.color === 'green' ? 'rgba(16, 185, 129, 0.3)' : sentiment.color === 'red' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(251, 146, 60, 0.3)'}; border-radius: 12px; padding: 20px; text-align: center;">
+                    <p style="color: #9CA3AF; font-size: 14px; margin: 0 0 5px 0; text-transform: uppercase; font-weight: 700;">Market Sentiment</p>
+                    <h2 style="color: ${sentiment.color === 'green' ? '#10B981' : sentiment.color === 'red' ? '#EF4444' : '#FB923C'}; font-size: 36px; font-weight: 900; margin: 0 0 5px 0;">${sentiment.text}</h2>
+                    <p style="color: #9CA3AF; font-size: 14px; margin: 0;">SPY: ${sentiment.spyChange > 0 ? '+' : ''}${sentiment.spyChange}%</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Top Gainers -->
+          <tr>
+            <td style="padding: 0 30px 30px 30px;">
+              <h3 style="color: #10B981; font-size: 20px; font-weight: 900; margin: 0 0 15px 0;">? TOP GAINERS</h3>
+              ${gainers.slice(0, 3).map(stock => `
+                <table width="100%" cellpadding="0" cellspacing="0" style="background: rgba(17, 24, 39, 0.5); border: 2px solid rgba(55, 65, 81, 1); border-radius: 12px; margin-bottom: 12px; padding: 15px;">
+                  <tr>
+                    <td>
+                      <p style="color: #ffffff; font-size: 18px; font-weight: 900; margin: 0 0 5px 0;">$${stock.ticker}</p>
+                      <p style="color: #9CA3AF; font-size: 14px; margin: 0;">${stock.name}</p>
+                    </td>
+                    <td align="right">
+                      <p style="color: #10B981; font-size: 24px; font-weight: 900; margin: 0;">+${stock.change.toFixed(2)}%</p>
+                      <p style="color: #9CA3AF; font-size: 14px; margin: 0;">$${stock.price.toFixed(2)}</p>
+                    </td>
+                  </tr>
+                </table>
+              `).join('')}
+            </td>
+          </tr>
+
+          <!-- Top Losers -->
+          <tr>
+            <td style="padding: 0 30px 30px 30px;">
+              <h3 style="color: #EF4444; font-size: 20px; font-weight: 900; margin: 0 0 15px 0;">? TOP LOSERS</h3>
+              ${losers.slice(0, 3).map(stock => `
+                <table width="100%" cellpadding="0" cellspacing="0" style="background: rgba(17, 24, 39, 0.5); border: 2px solid rgba(55, 65, 81, 1); border-radius: 12px; margin-bottom: 12px; padding: 15px;">
+                  <tr>
+                    <td>
+                      <p style="color: #ffffff; font-size: 18px; font-weight: 900; margin: 0 0 5px 0;">$${stock.ticker}</p>
+                      <p style="color: #9CA3AF; font-size: 14px; margin: 0;">${stock.name}</p>
+                    </td>
+                    <td align="right">
+                      <p style="color: #EF4444; font-size: 24px; font-weight: 900; margin: 0;">${stock.change.toFixed(2)}%</p>
+                      <p style="color: #9CA3AF; font-size: 14px; margin: 0;">$${stock.price.toFixed(2)}</p>
+                    </td>
+                  </tr>
+                </table>
+              `).join('')}
+            </td>
+          </tr>
+
+          <!-- Latest Articles -->
+          ${articles && articles.length > 0 ? `
+          <tr>
+            <td style="padding: 0 30px 30px 30px;">
+              <h3 style="color: #FF8C00; font-size: 20px; font-weight: 900; margin: 0 0 15px 0;">? LATEST ARTICLES</h3>
+              ${articles.slice(0, 2).map(article => `
+                <table width="100%" cellpadding="0" cellspacing="0" style="background: rgba(17, 24, 39, 0.5); border: 2px solid rgba(55, 65, 81, 1); border-radius: 12px; margin-bottom: 12px; padding: 15px;">
+                  <tr>
+                    <td>
+                      <p style="color: #ffffff; font-size: 16px; font-weight: 700; margin: 0 0 8px 0;">${article.title}</p>
+                      <p style="color: #9CA3AF; font-size: 14px; margin: 0 0 12px 0;">${article.excerpt.substring(0, 100)}...</p>
+                      <a href="https://stockmarkettoday.com/blog/${article.slug}" style="display: inline-block; background: #FF8C00; color: #ffffff; text-decoration: none; padding: 10px 20px; border-radius: 8px; font-weight: 700; font-size: 14px;">Read More ?</a>
+                    </td>
+                  </tr>
+                </table>
+              `).join('')}
+            </td>
+          </tr>
+          ` : ''}
+
+          <!-- CTA -->
+          <tr>
+            <td style="padding: 0 30px 30px 30px;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="background: linear-gradient(135deg, #FF8C00 0%, #FF6B00 100%); border-radius: 12px; padding: 25px; text-align: center;">
+                <tr>
+                  <td>
+                    <p style="color: #ffffff; font-size: 20px; font-weight: 900; margin: 0 0 10px 0;">Never Miss a Big Move!</p>
+                    <p style="color: #ffffff; font-size: 14px; margin: 0 0 20px 0; opacity: 0.9;">Get instant SMS alerts when stocks explode</p>
+                    <a href="https://stockmarkettoday.com/sign-up" style="display: inline-block; background: #ffffff; color: #FF8C00; text-decoration: none; padding: 14px 30px; border-radius: 10px; font-weight: 900; font-size: 16px;">Get Free Alerts ?</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 30px; text-align: center; border-top: 1px solid rgba(55, 65, 81, 1);">
+              <p style="color: #9CA3AF; font-size: 12px; margin: 0 0 10px 0;">
+                � 2025 StockMarketToday.com | Market Intelligence Platform
+              </p>
+              <p style="color: #6B7280; font-size: 11px; margin: 0 0 15px 0;">
+                This is not financial advice. Trade at your own risk.
+              </p>
+              <a href="https://stockmarkettoday.com" style="color: #FF8C00; text-decoration: none; font-size: 12px; margin-right: 15px;">Visit Website</a>
+              <a href="{{unsubscribe}}" style="color: #6B7280; text-decoration: none; font-size: 12px;">Unsubscribe</a>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `;
+}
+
+// SEND DAILY EMAIL TO ALL SUBSCRIBERS
+async function sendDailyEmails() {
+  try {
+    console.log('? Sending daily emails to subscribers...');
+    
+    const subscribers = await Subscriber.find({ subscribed: true });
+    
+    if (subscribers.length === 0) {
+      console.log('?? No active subscribers to email');
+      return;
+    }
+
+    const marketData = await fetchMarketMovers();
+    if (!marketData || marketData.gainers.length === 0) {
+      console.log('?? No market data available for email');
+      return;
+    }
+
+    const spyResponse = await fetch(`https://finnhub.io/api/v1/quote?symbol=SPY&token=${FINNHUB_API_KEY}`);
+    const spyData = await spyResponse.json();
+    const spyChange = spyData.dp || 0;
+    let sentiment = {
+      text: spyChange > 1 ? 'Bullish' : spyChange < -1 ? 'Bearish' : 'Mixed',
+      color: spyChange > 1 ? 'green' : spyChange < -1 ? 'red' : 'orange',
+      spyChange: spyChange.toFixed(2)
+    };
+
+    const articles = await Article.find().sort({ publishedAt: -1 }).limit(2);
+
+    const emailHtml = createDailyEmailTemplate({
+      gainers: marketData.gainers,
+      losers: marketData.losers,
+      sentiment,
+      articles
+    });
+
+    const batchSize = 100;
+    let sentCount = 0;
+    
+    for (let i = 0; i < subscribers.length; i += batchSize) {
+      const batch = subscribers.slice(i, i + batchSize);
+      
+      const messages = batch.map(sub => ({
+        to: sub.email,
+        from: {
+          email: SENDGRID_FROM_EMAIL,
+          name: 'Stock Market Today'
+        },
+        subject: `? Market Recap: ${sentiment.text} Day | Top Movers Inside`,
+        html: emailHtml,
+        trackingSettings: {
+          clickTracking: { enable: true },
+          openTracking: { enable: true }
+        },
+        asm: {
+          groupId: 21234
+        }
+      }));
+
+      try {
+        await sgMail.send(messages);
+        sentCount += batch.length;
+        console.log(`? Sent ${batch.length} emails (${sentCount}/${subscribers.length})`);
+        
+        await Subscriber.updateMany(
+          { _id: { $in: batch.map(s => s._id) } },
+          { lastEmailSent: new Date() }
+        );
+        
+        if (i + batchSize < subscribers.length) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      } catch (error) {
+        console.error('Error sending email batch:', error);
+      }
+    }
+
+    console.log(`? Daily emails sent to ${sentCount} subscribers`);
+    
+  } catch (error) {
+    console.error('Error in sendDailyEmails:', error);
+  }
+}
+
 async function generateDailyArticles() {
   try {
-    console.log('🤖 Generating daily market articles...');
+    console.log('? Generating daily market articles...');
     
     const marketData = await fetchMarketMovers();
     if (!marketData || marketData.gainers.length === 0) {
@@ -247,20 +489,37 @@ async function generateDailyArticles() {
       sentiment: { text: sentiment, spyChange: spyChange.toFixed(2) }
     };
 
-    // Article 1: Opening bell perspective / morning analysis
-    const article1 = await generateDailyArticle({ ...baseData, angle: 'opening' });
+    const article1 = await generateDailyArticle({ 
+      ...baseData, 
+      angle: 'opening',
+      avoidStocks: [...recentlyMentionedStocks]
+    });
+    
     if (article1) {
       await saveArticle(article1);
+      const stocksMentioned = extractStockTickers(article1.title + ' ' + article1.content);
+      recentlyMentionedStocks.push(...stocksMentioned);
       await new Promise(resolve => setTimeout(resolve, 3000));
     }
 
-    // Article 2: Market trends / sector rotation perspective
-    const article2 = await generateDailyArticle({ ...baseData, angle: 'trends' });
+    const article2 = await generateDailyArticle({ 
+      ...baseData, 
+      angle: 'trends',
+      avoidStocks: [...recentlyMentionedStocks]
+    });
+    
     if (article2) {
       await saveArticle(article2);
+      const stocksMentioned = extractStockTickers(article2.title + ' ' + article2.content);
+      recentlyMentionedStocks.push(...stocksMentioned);
     }
     
-    console.log('✅ Daily articles generation complete');
+    if (recentlyMentionedStocks.length > 20) {
+      recentlyMentionedStocks = recentlyMentionedStocks.slice(-20);
+    }
+    
+    console.log('? Daily articles generation complete');
+    console.log(`? Recently mentioned stocks: ${recentlyMentionedStocks.join(', ')}`);
   } catch (error) {
     console.error('Error generating daily articles:', error);
   }
@@ -268,7 +527,7 @@ async function generateDailyArticles() {
 
 async function generateDailyArticle(marketData) {
   try {
-    const { gainers, losers, sentiment, angle } = marketData;
+    const { gainers, losers, sentiment, angle, avoidStocks = [] } = marketData;
     
     let articleFocus = '';
     
@@ -278,14 +537,18 @@ async function generateDailyArticle(marketData) {
 - Top 3-5 biggest gainers and what's driving them
 - Top 3-5 biggest losers and what's causing the declines
 - Sector trends and rotation patterns
-- Key market catalysts and news driving today's action`;
+- Key market catalysts and news driving today's action
+
+${avoidStocks.length > 0 ? `**CRITICAL: Avoid focusing on these stocks (already covered recently): ${avoidStocks.join(', ')}. Choose DIFFERENT stocks from the data provided.**` : ''}`;
     } else {
       articleFocus = `Focus this article on SECTOR TRENDS and TRADING OPPORTUNITIES in today's market. Take an analytical perspective that covers:
 - Which sectors are leading/lagging today
 - Common themes among top movers (biotech, tech, energy, etc.)
 - Volume patterns and market breadth
 - Trading strategies for volatile markets like today
-- What traders should watch for the rest of the session`;
+- What traders should watch for the rest of the session
+
+${avoidStocks.length > 0 ? `**CRITICAL: Avoid focusing on these stocks (already covered recently): ${avoidStocks.join(', ')}. Choose DIFFERENT stocks from the data provided.**` : ''}`;
     }
 
     const prompt = `You are a professional financial journalist writing for StockMarketToday.com, optimizing for the search term "Stock Market Today."
@@ -302,25 +565,76 @@ ${losers.map((s, i) => `${i + 1}. ${s.ticker}: ${s.change.toFixed(2)}% at $${s.p
 
 ${articleFocus}
 
-Article Requirements (800-1000 words):
-1. **SEO-optimized headline** starting with "Stock Market Today:" 
-2. **Strong opening paragraph** summarizing today's market action
-3. **Cover multiple top movers** (don't focus on just one stock)
-4. **Discuss broader market trends** and what's driving today's volatility
-5. **Include sector analysis** - which sectors are hot/cold
-6. **Add market context** - mention relevant news, Fed policy, economic data, or major catalysts
-7. **Provide actionable insights** for retail investors and traders
-8. **Use natural, engaging language** that appeals to both beginners and experienced traders
+**AGGRESSIVE SEO COPYWRITING REQUIREMENTS (800-1000 words):**
+
+1. **Headline Formula:** Use power words and numbers
+   - Include "Stock Market Today" at the start
+   - Add urgency: "Breaking", "Alert", "Surge", "Crash", "Rally", "Soars", "Plunges"
+   - Use numbers: "5 Stocks", "Top Movers", "3 Sectors"
+   - Make it click-worthy but accurate
+
+2. **Opening Paragraph (Hook):**
+   - Start with the most dramatic market move
+   - Use active voice and present tense
+   - Include specific numbers and percentages
+   - Create urgency and relevance
+   - Make readers feel they need to keep reading
+
+3. **SEO Keyword Density:**
+   - Primary: "stock market today" (use 3-5 times naturally)
+   - Secondary: "top gainers", "biggest movers", "market news", "stock trading"
+   - Long-tail: "stocks to watch", "market analysis today", "best performing stocks"
+   - Use variations naturally throughout
+
+4. **Content Structure for SEO:**
+   - Use H2 tags with keyword-rich headings
+   - Short paragraphs (2-3 sentences max)
+   - Bullet points for scannability
+   - Bold key statistics and stock tickers
+   - Answer "what, why, and what's next" clearly
+
+5. **Engagement Tactics:**
+   - Ask rhetorical questions to readers
+   - Use "you" language to address traders directly
+   - Create FOMO with phrases like "traders are watching", "institutional buying", "smart money"
+   - Include specific price targets and levels
+   - Make readers feel informed and ahead of the curve
+
+6. **Call-to-Action Elements:**
+   - Naturally mention "keep tracking" or "stay updated"
+   - Reference "today's session" and "upcoming trading days"
+   - Create anticipation for tomorrow
+   - End with forward-looking statement
+
+7. **Writing Style:**
+   - Professional but conversational
+   - Use strong action verbs: "surged", "plummeted", "rallied", "tanked", "soared", "crushed"
+   - No fluff - every sentence adds value
+   - Write for an 8th-grade reading level (wide audience)
+   - Make complex concepts accessible
+
+8. **Data-Driven Authority:**
+   - Cite specific percentage moves
+   - Reference volume data when significant
+   - Mention sector performance
+   - Compare to broader market (SPY, QQQ)
+   - Use precise numbers to build credibility
+
 9. **CRITICAL: Format ALL ticker symbols as cashtags** (e.g., $AAPL, $SPY, $NVDA)
+
+10. **Meta Elements:**
+    - Title should be 50-60 characters
+    - Meta description should create urgency and include main keyword
+    - Keywords should target trader intent and search behavior
 
 Format as JSON:
 {
-  "title": "Stock Market Today: [compelling headline about today's market action]",
-  "excerpt": "3-sentence summary covering overall market performance and key movers",
-  "content": "Full HTML article with <h2>, <h3>, <p>, <strong> tags. Use $TICKER format throughout.",
+  "title": "Stock Market Today: [Power Word] [Number] [Urgency Element] - [Main Move]",
+  "excerpt": "Lead with the biggest market move. Create urgency. Use specific numbers. Make readers want more.",
+  "content": "Full HTML article with SEO-optimized <h2>, <h3>, <p>, <strong> tags. Use $TICKER format throughout. Max engagement, max value.",
   "category": "Market Analysis",
-  "keywords": ["stock market today", "market movers", "top gainers", "top losers", "stock trading"],
-  "metaDescription": "155-character description starting with 'Stock Market Today:'"
+  "keywords": ["stock market today", "top gainers today", "biggest movers", "market news", "stock trading"],
+  "metaDescription": "Stock Market Today: [Main move] - [Key stat]. Discover which stocks are surging/crashing and what traders need to know NOW."
 }`;
 
     const message = await anthropic.messages.create({
@@ -415,11 +729,11 @@ async function saveArticle(articleData) {
   try {
     const article = new Article(articleData);
     await article.save();
-    console.log(`✅ Saved article: "${articleData.title}"`);
+    console.log(`? Saved article: "${articleData.title}"`);
     return article;
   } catch (error) {
     if (error.code === 11000) {
-      console.log(`⚠️ Article already exists`);
+      console.log(`?? Article already exists`);
     } else {
       console.error('Error saving article:', error);
     }
@@ -429,11 +743,11 @@ async function saveArticle(articleData) {
 
 async function generateEvergreenContent() {
   try {
-    console.log('📚 Generating evergreen article...');
+    console.log('? Generating evergreen article...');
     const article = await generateEvergreenArticle();
     if (article) {
       await saveArticle(article);
-      console.log('✅ Evergreen article generated');
+      console.log('? Evergreen article generated');
     }
   } catch (error) {
     console.error('Error generating evergreen article:', error);
@@ -442,6 +756,7 @@ async function generateEvergreenContent() {
 
 function scheduleArticleGeneration() {
   let lastDailyGeneration = null;
+  let lastEmailSent = null;
   let evergreenCount = 0;
   
   setInterval(() => {
@@ -456,22 +771,33 @@ function scheduleArticleGeneration() {
     if (dailyTimes.includes(hour) && minute === 0) {
       const today = now.toDateString();
       if (lastDailyGeneration !== today + hour) {
-        console.log(`⏰ Scheduled daily generation at ${hour}:00`);
+        console.log(`? Scheduled daily generation at ${hour}:00`);
         generateDailyArticles();
         lastDailyGeneration = today + hour;
+      }
+    }
+    
+    if (hour === 17 && minute === 0) {
+      const today = now.toDateString();
+      if (lastEmailSent !== today) {
+        console.log(`? Scheduled daily email at 5:00 PM`);
+        sendDailyEmails();
+        lastEmailSent = today;
       }
     }
     
     if ((dayOfWeek === 1 || dayOfWeek === 4) && hour === 9 && minute === 0) {
       const weekKey = `${now.getFullYear()}-W${Math.ceil(now.getDate() / 7)}-${dayOfWeek}`;
       if (evergreenCount !== weekKey) {
-        console.log(`⏰ Scheduled evergreen generation`);
+        console.log(`? Scheduled evergreen generation`);
         generateEvergreenContent();
         evergreenCount = weekKey;
       }
     }
   }, 60000);
 }
+
+// ROUTES
 
 app.get('/api/blog-articles', async (req, res) => {
   try {
@@ -521,12 +847,72 @@ app.post('/api/generate-articles', async (req, res) => {
   }
 });
 
+app.post('/api/send-daily-emails', async (req, res) => {
+  try {
+    await sendDailyEmails();
+    res.json({ success: true, message: 'Daily emails sent' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to send emails' });
+  }
+});
+
+app.post('/api/signup', async (req, res) => {
+  try {
+    const { email, phone, interest, source } = req.body;
+    
+    let subscriber = await Subscriber.findOne({ email });
+    
+    if (subscriber) {
+      if (!subscriber.subscribed) {
+        subscriber.subscribed = true;
+        subscriber.subscribedAt = new Date();
+        await subscriber.save();
+        return res.json({ success: true, message: 'Re-subscribed successfully' });
+      }
+      return res.json({ success: true, message: 'Already subscribed' });
+    }
+    
+    subscriber = new Subscriber({
+      email,
+      phone,
+      interest,
+      source: source || 'StockMarketToday.com'
+    });
+    
+    await subscriber.save();
+    console.log(`? New subscriber: ${email}`);
+    
+    res.json({ success: true, message: 'Subscribed successfully' });
+  } catch (error) {
+    console.error('Signup error:', error);
+    res.status(500).json({ success: false, message: 'Error saving signup' });
+  }
+});
+
+app.post('/api/unsubscribe', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    const subscriber = await Subscriber.findOne({ email });
+    if (subscriber) {
+      subscriber.subscribed = false;
+      subscriber.unsubscribedAt = new Date();
+      await subscriber.save();
+      console.log(`? Unsubscribed: ${email}`);
+    }
+    
+    res.json({ success: true, message: 'Unsubscribed successfully' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Error unsubscribing' });
+  }
+});
+
 app.get('/api/top-gainers', async (req, res) => {
   try {
     const now = Date.now();
     
     if (cachedMarketData.lastUpdated && (now - cachedMarketData.lastUpdated) < 12 * 60 * 1000) {
-      console.log('📦 Returning cached gainers data');
+      console.log('? Returning cached gainers data');
       return res.json({
         gainers: cachedMarketData.gainers,
         lastUpdated: new Date(cachedMarketData.lastUpdated).toISOString(),
@@ -534,7 +920,7 @@ app.get('/api/top-gainers', async (req, res) => {
       });
     }
 
-    console.log('🔄 Fetching fresh gainers data...');
+    console.log('? Fetching fresh gainers data...');
     const marketData = await fetchMarketMovers();
     
     if (marketData && marketData.gainers.length > 0) {
@@ -562,7 +948,7 @@ app.get('/api/top-losers', async (req, res) => {
     const now = Date.now();
     
     if (cachedMarketData.lastUpdated && (now - cachedMarketData.lastUpdated) < 12 * 60 * 1000) {
-      console.log('📦 Returning cached losers data');
+      console.log('? Returning cached losers data');
       return res.json({
         losers: cachedMarketData.losers,
         lastUpdated: new Date(cachedMarketData.lastUpdated).toISOString(),
@@ -570,7 +956,7 @@ app.get('/api/top-losers', async (req, res) => {
       });
     }
 
-    console.log('🔄 Fetching fresh losers data...');
+    console.log('? Fetching fresh losers data...');
     const marketData = await fetchMarketMovers();
     
     if (marketData && marketData.losers.length > 0) {
@@ -627,13 +1013,15 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
     cacheStatus: cachedMarketData.lastUpdated ? 'Active' : 'Empty',
-    marketStatus: isMarketOpen() ? 'Open' : 'Closed'
+    marketStatus: isMarketOpen() ? 'Open' : 'Closed',
+    recentStocks: recentlyMentionedStocks.join(', ') || 'None',
+    sendgrid: SENDGRID_API_KEY ? 'Configured' : 'Not configured'
   });
 });
 
 app.get('/', (req, res) => {
   res.json({
-    message: 'Stock Market API v5.1 - Real-Time Market Movers',
+    message: 'Stock Market API v6.0 - Email Automation Enabled',
     endpoints: {
       health: '/health',
       topGainers: '/api/top-gainers',
@@ -641,19 +1029,25 @@ app.get('/', (req, res) => {
       marketSentiment: '/api/market-sentiment',
       blogArticles: '/api/blog-articles',
       singleArticle: '/api/blog-articles/:slug',
-      generateArticles: 'POST /api/generate-articles'
+      signup: 'POST /api/signup',
+      unsubscribe: 'POST /api/unsubscribe',
+      generateArticles: 'POST /api/generate-articles',
+      sendDailyEmails: 'POST /api/send-daily-emails'
     }
   });
 });
 
 setTimeout(async () => {
   const articleCount = await Article.countDocuments();
+  const subscriberCount = await Subscriber.countDocuments({ subscribed: true });
+  
+  console.log(`? Found ${articleCount} existing articles`);
+  console.log(`? Found ${subscriberCount} active subscribers`);
+  
   if (articleCount === 0) {
-    console.log('🚀 Generating initial content...');
+    console.log('? Generating initial content...');
     await generateDailyArticles();
     await generateEvergreenContent();
-  } else {
-    console.log(`📚 Found ${articleCount} existing articles`);
   }
 }, 10000);
 
@@ -661,17 +1055,18 @@ scheduleArticleGeneration();
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('🚀 Stock Market API v5.1 - REAL-TIME MOVERS');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log(`📡 Port: ${PORT}`);
-  console.log('📊 Data Source: Finviz (Top 5 gainers/losers, 500k+ volume)');
-  console.log('🤖 AI Blog: "Stock Market Today" focused articles');
-  console.log('📝 Daily articles: 2x daily (10AM, 2PM) - Market Days Only');
-  console.log('📚 Evergreen articles: 2x weekly (Mon & Thu, 9AM)');
-  console.log('🔄 Data Updates: Every 12 minutes');
-  console.log(`📅 Market Status: ${isMarketOpen() ? 'OPEN' : 'CLOSED'}`);
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('????????????????????????????????????????????');
+  console.log('? Stock Market API v6.0 - EMAIL AUTOMATION');
+  console.log('????????????????????????????????????????????');
+  console.log(`? Port: ${PORT}`);
+  console.log('? Data: Finviz scraping (Top 5 each, 500k+ vol)');
+  console.log('? AI Blog: AGGRESSIVE SEO + Duplicate Prevention');
+  console.log('? Daily Emails: 5 PM ET (after market close)');
+  console.log('? Daily articles: 2x daily (10AM, 2PM)');
+  console.log('? Data Updates: Every 12 minutes');
+  console.log(`? Market Status: ${isMarketOpen() ? 'OPEN' : 'CLOSED'}`);
+  console.log(`? SendGrid: ${SENDGRID_API_KEY ? 'CONFIGURED ?' : 'NOT CONFIGURED ?'}`);
+  console.log('????????????????????????????????????????????');
 });
 
 module.exports = app;
