@@ -856,6 +856,43 @@ app.post('/api/send-daily-emails', async (req, res) => {
   }
 });
 
+// Sync subscriber to SendGrid Contacts
+async function syncToSendGridContacts(subscriber) {
+  try {
+    const contactData = {
+      contacts: [
+        {
+          email: subscriber.email,
+          phone_number: subscriber.phone || '',
+          custom_fields: {
+            w1_T: subscriber.interest || 'General', // Interest
+            w2_T: subscriber.source || 'StockMarketToday.com', // Source
+            w3_D: subscriber.subscribedAt || new Date() // Subscribed Date
+          }
+        }
+      ]
+    };
+
+    const response = await fetch('https://api.sendgrid.com/v3/marketing/contacts', {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${SENDGRID_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(contactData)
+    });
+
+    if (response.ok) {
+      console.log(`📬 Synced to SendGrid Contacts: ${subscriber.email}`);
+    } else {
+      const error = await response.text();
+      console.error(`⚠️ SendGrid sync failed: ${error}`);
+    }
+  } catch (error) {
+    console.error('SendGrid contact sync error:', error);
+  }
+}
+
 app.post('/api/signup', async (req, res) => {
   try {
     const { email, phone, interest, source } = req.body;
@@ -867,6 +904,10 @@ app.post('/api/signup', async (req, res) => {
         subscriber.subscribed = true;
         subscriber.subscribedAt = new Date();
         await subscriber.save();
+        
+        // Sync to SendGrid
+        syncToSendGridContacts(subscriber);
+        
         return res.json({ success: true, message: 'Re-subscribed successfully' });
       }
       return res.json({ success: true, message: 'Already subscribed' });
@@ -881,6 +922,9 @@ app.post('/api/signup', async (req, res) => {
     
     await subscriber.save();
     console.log(`✅ New subscriber: ${email}`);
+    
+    // Sync to SendGrid Contacts (non-blocking)
+    syncToSendGridContacts(subscriber);
     
     res.json({ success: true, message: 'Subscribed successfully' });
   } catch (error) {
