@@ -3,6 +3,7 @@ const cors = require('cors');
 const fetch = require('node-fetch');
 const Anthropic = require('@anthropic-ai/sdk');
 const mongoose = require('mongoose');
+const cheerio = require('cheerio');
 
 const app = express();
 app.use(cors());
@@ -43,120 +44,34 @@ const STOCK_MARKET_IMAGES = [
   'https://images.unsplash.com/photo-1507925921958-8a62f3d1a50d?w=1200&h=630&fit=crop',
   'https://images.unsplash.com/photo-1579532536935-619928decd08?w=1200&h=630&fit=crop',
   'https://images.unsplash.com/photo-1624996379697-f01d168b1a52?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1535320903710-d993d3d77d29?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1563986768609-322da13575f3?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1579532537598-459ecdaf39cc?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1553729459-efe14ef6055d?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1518186285589-2f7649de83e0?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1565514020179-026b92b84bb6?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1560221328-12fe60f83ab8?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1642790106117-e829e14a795f?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1543286386-713bdd548da4?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1535378620166-273708d44e4c?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1526628953301-3e589a6a8b74?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1560472355-536de3962603?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1507925921958-8a62f3d1a50d?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1605792657660-596af9009e82?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1624996379697-f01d168b1a52?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1579532536935-619928decd08?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1535320903710-d993d3d77d29?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1543286386-713bdd548da4?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1565514020179-026b92b84bb6?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1563986768609-322da13575f3?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1579532537598-459ecdaf39cc?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1560221328-12fe60f83ab8?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1518186285589-2f7649de83e0?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1535378620166-273708d44e4c?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1526628953301-3e589a6a8b74?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1560472355-536de3962603?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1642790551116-18e150f248e8?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1605792657660-596af9009e82?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1507925921958-8a62f3d1a50d?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1579532536935-619928decd08?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1642790106117-e829e14a795f?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1535320903710-d993d3d77d29?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1543286386-713bdd548da4?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1565514020179-026b92b84bb6?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1563986768609-322da13575f3?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1579532537598-459ecdaf39cc?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1560221328-12fe60f83ab8?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1518186285589-2f7649de83e0?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1535378620166-273708d44e4c?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1526628953301-3e589a6a8b74?w=1200&h=630&fit=crop',
-  'https://images.unsplash.com/photo-1560472355-536de3962603?w=1200&h=630&fit=crop'
+  'https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=1200&h=630&fit=crop'
 ];
 
 // US Stock Market Holidays 2025 (NYSE/NASDAQ closed)
 const MARKET_HOLIDAYS_2025 = [
-  '2025-01-01', // New Year's Day
-  '2025-01-20', // MLK Jr. Day
-  '2025-02-17', // Presidents Day
-  '2025-04-18', // Good Friday
-  '2025-05-26', // Memorial Day
-  '2025-06-19', // Juneteenth
-  '2025-07-04', // Independence Day
-  '2025-09-01', // Labor Day
-  '2025-11-27', // Thanksgiving
-  '2025-12-25'  // Christmas
+  '2025-01-01', '2025-01-20', '2025-02-17', '2025-04-18', '2025-05-26',
+  '2025-06-19', '2025-07-04', '2025-09-01', '2025-11-27', '2025-12-25'
 ];
 
-// Get random image from rotating array
 function getRandomStockImage() {
   return STOCK_MARKET_IMAGES[Math.floor(Math.random() * STOCK_MARKET_IMAGES.length)];
 }
 
-// Check if market is open today
 function isMarketOpen() {
   const now = new Date();
   const dayOfWeek = now.getDay();
   const dateString = now.toISOString().split('T')[0];
   
-  // Weekend check (0 = Sunday, 6 = Saturday)
-  if (dayOfWeek === 0 || dayOfWeek === 6) {
-    return false;
-  }
-  
-  // Holiday check
-  if (MARKET_HOLIDAYS_2025.includes(dateString)) {
-    return false;
-  }
+  if (dayOfWeek === 0 || dayOfWeek === 6) return false;
+  if (MARKET_HOLIDAYS_2025.includes(dateString)) return false;
   
   return true;
 }
 
-// Connect to MongoDB
 mongoose.connect(MONGODB_URI)
 .then(() => console.log('✅ MongoDB connected successfully'))
 .catch(err => console.error('❌ MongoDB connection error:', err));
 
-// Article Schema
 const articleSchema = new mongoose.Schema({
   title: { type: String, required: true },
   slug: { type: String, required: true, unique: true },
@@ -177,7 +92,6 @@ const Article = mongoose.model('Article', articleSchema);
 
 let cachedMarketData = { gainers: [], losers: [], lastUpdated: null };
 
-// Generate chart data
 function generateChartData(changePercent) {
   const points = 7;
   const data = [];
@@ -193,122 +107,228 @@ function generateChartData(changePercent) {
   return data;
 }
 
-// Fetch market movers from Polygon - REAL-TIME DATA
+// Fetch market movers from Finviz (scraping)
 async function fetchMarketMovers() {
   try {
-    console.log('📊 Fetching LIVE NYSE/NASDAQ stocks from Polygon...');
+    console.log('📊 Scraping Finviz for real-time top movers...');
     
-    // Get ALL tickers snapshot (current day data - LIVE)
-    const url = `https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers?apiKey=${POLYGON_API_KEY}`;
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    };
     
-    const response = await fetch(url);
-    const data = await response.json();
+    // Fetch top gainers (DESCENDING order - highest % first)
+    const gainersUrl = 'https://finviz.com/screener.ashx?v=111&f=sh_curvol_o500&ft=4&o=-change';
+    console.log('🔍 Fetching gainers from Finviz...');
+    const gainersResponse = await fetch(gainersUrl, { headers });
+    const gainersHtml = await gainersResponse.text();
     
-    if (data.status !== 'OK' || !data.tickers) {
-      console.error('Polygon API error:', data);
-      return null;
+    // Delay
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Fetch top losers (ASCENDING order - most negative % first)
+    const losersUrl = 'https://finviz.com/screener.ashx?v=111&f=sh_curvol_o500&ft=4&o=change';
+    console.log('🔍 Fetching losers from Finviz...');
+    const losersResponse = await fetch(losersUrl, { headers });
+    const losersHtml = await losersResponse.text();
+    
+    // Parse gainers
+    const $gainers = cheerio.load(gainersHtml);
+    const gainers = [];
+    
+    $gainers('table tr').each((i, row) => {
+      const cols = $gainers(row).find('td');
+      
+      if (cols.length >= 11 && i > 0) {
+        const ticker = $gainers(cols[1]).text().trim();
+        const priceText = $gainers(cols[8]).text().trim();
+        const changeText = $gainers(cols[9]).text().trim();
+        const volumeText = $gainers(cols[10]).text().trim();
+        
+        if (ticker && ticker.length <= 5) {
+          const price = parseFloat(priceText);
+          const change = parseFloat(changeText.replace('%', '').replace('+', ''));
+          const volume = parseInt(volumeText.replace(/,/g, ''));
+          
+          if (!isNaN(price) && !isNaN(change) && !isNaN(volume)) {
+            gainers.push({
+              ticker,
+              name: ticker,
+              price,
+              change: Math.abs(change),
+              volume,
+              chartData: generateChartData(Math.abs(change))
+            });
+          }
+        }
+      }
+    });
+    
+    // Parse losers
+    const $losers = cheerio.load(losersHtml);
+    const losers = [];
+    
+    $losers('table tr').each((i, row) => {
+      const cols = $losers(row).find('td');
+      
+      if (cols.length >= 11 && i > 0) {
+        const ticker = $losers(cols[1]).text().trim();
+        const priceText = $losers(cols[8]).text().trim();
+        const changeText = $losers(cols[9]).text().trim();
+        const volumeText = $losers(cols[10]).text().trim();
+        
+        if (ticker && ticker.length <= 5) {
+          const price = parseFloat(priceText);
+          let change = parseFloat(changeText.replace('%', '').replace('+', ''));
+          const volume = parseInt(volumeText.replace(/,/g, ''));
+          
+          if (!isNaN(price) && !isNaN(change) && !isNaN(volume)) {
+            if (change > 0) change = -change;
+            losers.push({
+              ticker,
+              name: ticker,
+              price,
+              change: change,
+              volume,
+              chartData: generateChartData(change)
+            });
+          }
+        }
+      }
+    });
+    
+    // Take top 5 from each
+    const topGainers = gainers.slice(0, 5);
+    const topLosers = losers.slice(0, 5);
+    
+    console.log(`🚀 Scraped ${topGainers.length} top gainers from Finviz`);
+    console.log(`📉 Scraped ${topLosers.length} top losers from Finviz`);
+    
+    if (topGainers.length > 0) {
+      console.log(`   #1 Gainer: ${topGainers[0].ticker} +${topGainers[0].change.toFixed(2)}%`);
+    }
+    if (topLosers.length > 0) {
+      console.log(`   #1 Loser: ${topLosers[0].ticker} ${topLosers[0].change.toFixed(2)}%`);
     }
     
-    console.log(`✅ Received ${data.tickers.length} stocks from Polygon (LIVE DATA)`);
+    return { 
+      gainers: topGainers, 
+      losers: topLosers 
+    };
     
-    const stocks = data.tickers
-      .filter(stock => 
-        stock.day && 
-        stock.prevDay && 
-        stock.day.c > 0 && 
-        stock.prevDay.c > 0 && 
-        stock.day.v > 100000
-      )
-      .map(stock => {
-        const currentPrice = stock.day.c; // Today's current price
-        const previousClose = stock.prevDay.c; // Yesterday's close
-        const changePercent = ((currentPrice - previousClose) / previousClose) * 100;
-        
-        return {
-          ticker: stock.ticker,
-          name: stock.ticker,
-          price: currentPrice,
-          change: changePercent,
-          volume: stock.day.v,
-          chartData: generateChartData(changePercent)
-        };
-      });
-    
-    const gainers = stocks
-      .filter(s => s.change > 0)
-      .sort((a, b) => b.change - a.change)
-      .slice(0, 20);
-    
-    const losers = stocks
-      .filter(s => s.change < 0)
-      .sort((a, b) => a.change - b.change)
-      .slice(0, 20);
-    
-    console.log(`🚀 Top Gainer: ${gainers[0]?.ticker} +${gainers[0]?.change.toFixed(2)}% @ $${gainers[0]?.price.toFixed(2)}`);
-    console.log(`📉 Top Loser: ${losers[0]?.ticker} ${losers[0]?.change.toFixed(2)}% @ $${losers[0]?.price.toFixed(2)}`);
-    
-    return { gainers, losers };
   } catch (error) {
-    console.error('Error fetching from Polygon:', error);
-    return null;
+    console.error('💥 Error scraping Finviz:', error.message);
+    return { gainers: [], losers: [] };
   }
 }
 
-// Create URL-friendly slug
 function createSlug(title) {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '');
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
 
-// Generate DAILY market article
+async function generateDailyArticles() {
+  try {
+    console.log('🤖 Generating daily market articles...');
+    
+    const marketData = await fetchMarketMovers();
+    if (!marketData || marketData.gainers.length === 0) {
+      console.error('No market data available');
+      return;
+    }
+
+    const spyResponse = await fetch(`https://finnhub.io/api/v1/quote?symbol=SPY&token=${FINNHUB_API_KEY}`);
+    const spyData = await spyResponse.json();
+    
+    const spyChange = spyData.dp || 0;
+    let sentiment = spyChange > 1 ? 'Bullish' : spyChange < -1 ? 'Bearish' : 'Mixed';
+
+    const baseData = {
+      gainers: marketData.gainers,
+      losers: marketData.losers,
+      sentiment: { text: sentiment, spyChange: spyChange.toFixed(2) }
+    };
+
+    // Article 1: Opening bell perspective / morning analysis
+    const article1 = await generateDailyArticle({ ...baseData, angle: 'opening' });
+    if (article1) {
+      await saveArticle(article1);
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+
+    // Article 2: Market trends / sector rotation perspective
+    const article2 = await generateDailyArticle({ ...baseData, angle: 'trends' });
+    if (article2) {
+      await saveArticle(article2);
+    }
+    
+    console.log('✅ Daily articles generation complete');
+  } catch (error) {
+    console.error('Error generating daily articles:', error);
+  }
+}
+
 async function generateDailyArticle(marketData) {
   try {
-    const { gainers, losers, sentiment } = marketData;
+    const { gainers, losers, sentiment, angle } = marketData;
     
-    const topGainer = gainers[0];
-    const topLoser = losers[0];
+    let articleFocus = '';
     
-    const prompt = `You are a professional financial journalist writing for StockMarketToday.com, creating content that will be indexed by search engines and LLMs.
+    if (angle === 'opening') {
+      articleFocus = `Focus this article on TODAY'S OVERALL MARKET ACTION and what's driving the biggest moves. Take a comprehensive "market open" perspective that covers:
+- Overall market sentiment (SPY ${sentiment.spyChange}%)
+- Top 3-5 biggest gainers and what's driving them
+- Top 3-5 biggest losers and what's causing the declines
+- Sector trends and rotation patterns
+- Key market catalysts and news driving today's action`;
+    } else {
+      articleFocus = `Focus this article on SECTOR TRENDS and TRADING OPPORTUNITIES in today's market. Take an analytical perspective that covers:
+- Which sectors are leading/lagging today
+- Common themes among top movers (biotech, tech, energy, etc.)
+- Volume patterns and market breadth
+- Trading strategies for volatile markets like today
+- What traders should watch for the rest of the session`;
+    }
 
-Write an SEO-optimized, comprehensive blog article about today's stock market performance using this REAL market data:
+    const prompt = `You are a professional financial journalist writing for StockMarketToday.com, optimizing for the search term "Stock Market Today."
+
+Write a comprehensive market overview article using this REAL data:
 
 **Market Sentiment:** ${sentiment.text} (SPY: ${sentiment.spyChange}%)
-**Top Gainer:** ${topGainer.ticker} +${topGainer.change.toFixed(2)}% at $${topGainer.price.toFixed(2)}
-**Top Loser:** ${topLoser.ticker} ${topLoser.change.toFixed(2)}% at $${topLoser.price.toFixed(2)}
 
-**Additional Movers:**
-${gainers.slice(1, 5).map(s => `- ${s.ticker}: +${s.change.toFixed(2)}%`).join('\n')}
-${losers.slice(1, 3).map(s => `- ${s.ticker}: ${s.change.toFixed(2)}%`).join('\n')}
+**Top 5 Gainers Today:**
+${gainers.map((s, i) => `${i + 1}. ${s.ticker}: +${s.change.toFixed(2)}% at $${s.price.toFixed(2)}`).join('\n')}
 
-Write a detailed article (600-800 words) that:
-1. Has a compelling, SEO-friendly headline (use keywords: stock market, stocks, trading, ${topGainer.ticker})
-2. Opens with a strong summary paragraph
-3. Analyzes what's driving these movements with specific data
-4. Provides actionable insights for retail investors
-5. Discusses sector trends and broader market context
-6. Includes a forward-looking conclusion
-7. Uses natural language optimized for both humans and AI indexing
-8. **CRITICAL: Format ALL ticker symbols as cashtags with dollar signs (e.g., $NVDA, $TSLA, $AAPL, $SPY) throughout the entire article - this makes them clickable for readers**
+**Top 5 Losers Today:**
+${losers.map((s, i) => `${i + 1}. ${s.ticker}: ${s.change.toFixed(2)}% at $${s.price.toFixed(2)}`).join('\n')}
+
+${articleFocus}
+
+Article Requirements (800-1000 words):
+1. **SEO-optimized headline** starting with "Stock Market Today:" 
+2. **Strong opening paragraph** summarizing today's market action
+3. **Cover multiple top movers** (don't focus on just one stock)
+4. **Discuss broader market trends** and what's driving today's volatility
+5. **Include sector analysis** - which sectors are hot/cold
+6. **Add market context** - mention relevant news, Fed policy, economic data, or major catalysts
+7. **Provide actionable insights** for retail investors and traders
+8. **Use natural, engaging language** that appeals to both beginners and experienced traders
+9. **CRITICAL: Format ALL ticker symbols as cashtags** (e.g., $AAPL, $SPY, $NVDA)
 
 Format as JSON:
 {
-  "title": "SEO headline with keywords",
-  "excerpt": "Compelling 2-3 sentence summary with key stats",
-  "content": "Full HTML article with <h2>, <h3>, <p>, <strong> tags for structure. Use $TICKER format for ALL stock symbols.",
+  "title": "Stock Market Today: [compelling headline about today's market action]",
+  "excerpt": "3-sentence summary covering overall market performance and key movers",
+  "content": "Full HTML article with <h2>, <h3>, <p>, <strong> tags. Use $TICKER format throughout.",
   "category": "Market Analysis",
-  "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
-  "metaDescription": "155-character SEO meta description with keywords"
+  "keywords": ["stock market today", "market movers", "top gainers", "top losers", "stock trading"],
+  "metaDescription": "155-character description starting with 'Stock Market Today:'"
 }`;
 
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 3000,
+      max_tokens: 4000,
       messages: [{ role: 'user', content: prompt }]
     });
 
-    // Extract JSON from markdown code blocks if present
     let responseText = message.content[0].text;
     if (responseText.includes('```json')) {
       responseText = responseText.split('```json')[1].split('```')[0].trim();
@@ -323,7 +343,7 @@ Format as JSON:
       author: 'Stock Market Today Editorial Team',
       articleType: 'daily',
       image: getRandomStockImage(),
-      readTime: '6 min read',
+      readTime: '8 min read',
       publishedAt: new Date()
     };
   } catch (error) {
@@ -332,7 +352,6 @@ Format as JSON:
   }
 }
 
-// Generate EVERGREEN article
 async function generateEvergreenArticle() {
   try {
     const evergreenTopics = [
@@ -340,41 +359,25 @@ async function generateEvergreenArticle() {
       'How to Build a Diversified Investment Portfolio: Step-by-Step Strategy',
       'Technical Analysis 101: Essential Chart Patterns Every Trader Should Know',
       'Value Investing vs Growth Investing: Which Strategy is Right for You?',
-      'Understanding Market Volatility: How to Protect Your Portfolio',
-      'The Psychology of Trading: Overcoming Emotional Decision Making',
-      'Dividend Investing Strategies: Building Passive Income Through Stocks',
-      'How to Read Financial Statements: A Comprehensive Guide',
-      'Options Trading Basics: Calls, Puts, and Strategic Applications',
-      'Risk Management in Stock Trading: Essential Rules and Techniques',
-      'Index Funds vs Individual Stocks: Pros and Cons for Long-Term Investors',
-      'Market Timing vs Time in Market: What Research Actually Shows',
-      'Understanding P/E Ratios and Other Valuation Metrics',
-      'How Economic Indicators Affect Stock Prices: A Deep Dive',
-      'Tax-Efficient Investing: Strategies to Maximize After-Tax Returns'
+      'Understanding Market Volatility: How to Protect Your Portfolio'
     ];
 
     const topic = evergreenTopics[Math.floor(Math.random() * evergreenTopics.length)];
     
-    const prompt = `You are a professional financial educator writing comprehensive evergreen content for StockMarketToday.com that will be valuable for years and indexed by search engines and LLMs.
-
-Write an in-depth, SEO-optimized educational article about: "${topic}"
+    const prompt = `Write an in-depth, SEO-optimized educational article about: "${topic}"
 
 Requirements:
-1. Write 1000-1500 words of high-quality, comprehensive content
+1. Write 1000-1500 words
 2. Structure with clear H2 and H3 headings
-3. Include specific examples, data, and actionable advice
-4. Explain concepts clearly for beginners while adding value for experienced investors
-5. Use natural, engaging language optimized for both human readers and AI indexing
-6. Include practical takeaways and next steps
-7. Focus on timeless principles, not current events
-8. **IMPORTANT: Format any stock ticker symbols mentioned as cashtags (e.g., $SPY, $QQQ, $AAPL, $VOO) to make them clickable**
+3. Include specific examples and actionable advice
+4. **IMPORTANT: Format any stock ticker symbols as cashtags (e.g., $SPY, $QQQ, $AAPL)**
 
 Format as JSON:
 {
-  "title": "SEO-optimized title based on the topic",
-  "excerpt": "Compelling 3-sentence summary that explains the value",
-  "content": "Full HTML article with proper <h2>, <h3>, <p>, <ul>, <li>, <strong> tags. Use $TICKER format for any stock symbols.",
-  "category": "Choose: Educational, Trading Strategies, or Investment Guide",
+  "title": "SEO-optimized title",
+  "excerpt": "Compelling 3-sentence summary",
+  "content": "Full HTML article with <h2>, <h3>, <p>, <ul>, <li>, <strong> tags. Use $TICKER format.",
+  "category": "Educational",
   "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
   "metaDescription": "155-character SEO description"
 }`;
@@ -385,7 +388,6 @@ Format as JSON:
       messages: [{ role: 'user', content: prompt }]
     });
 
-    // Extract JSON from markdown code blocks if present
     let responseText = message.content[0].text;
     if (responseText.includes('```json')) {
       responseText = responseText.split('```json')[1].split('```')[0].trim();
@@ -409,7 +411,6 @@ Format as JSON:
   }
 }
 
-// Save article to MongoDB
 async function saveArticle(articleData) {
   try {
     const article = new Article(articleData);
@@ -418,7 +419,7 @@ async function saveArticle(articleData) {
     return article;
   } catch (error) {
     if (error.code === 11000) {
-      console.log(`⚠️ Article already exists: "${articleData.title}"`);
+      console.log(`⚠️ Article already exists`);
     } else {
       console.error('Error saving article:', error);
     }
@@ -426,51 +427,9 @@ async function saveArticle(articleData) {
   }
 }
 
-// Generate daily articles (2 per day)
-async function generateDailyArticles() {
-  try {
-    console.log('🤖 Generating daily market articles...');
-    
-    const marketData = await fetchMarketMovers();
-    if (!marketData) {
-      console.error('No market data available');
-      return;
-    }
-
-    const spyResponse = await fetch(
-      `https://finnhub.io/api/v1/quote?symbol=SPY&token=${FINNHUB_API_KEY}`
-    );
-    const spyData = await spyResponse.json();
-    
-    const spyChange = spyData.dp || 0;
-    let sentiment = spyChange > 1 ? 'Bullish' : spyChange < -1 ? 'Bearish' : 'Mixed';
-
-    const fullMarketData = {
-      gainers: marketData.gainers,
-      losers: marketData.losers,
-      sentiment: { text: sentiment, spyChange: spyChange.toFixed(2) }
-    };
-
-    // Generate 2 daily articles
-    for (let i = 0; i < 2; i++) {
-      const article = await generateDailyArticle(fullMarketData);
-      if (article) {
-        await saveArticle(article);
-        await new Promise(resolve => setTimeout(resolve, 3000));
-      }
-    }
-    
-    console.log('✅ Daily articles generation complete');
-  } catch (error) {
-    console.error('Error generating daily articles:', error);
-  }
-}
-
-// Generate evergreen article
 async function generateEvergreenContent() {
   try {
     console.log('📚 Generating evergreen article...');
-    
     const article = await generateEvergreenArticle();
     if (article) {
       await saveArticle(article);
@@ -481,38 +440,32 @@ async function generateEvergreenContent() {
   }
 }
 
-// Schedule article generation
 function scheduleArticleGeneration() {
   let lastDailyGeneration = null;
   let evergreenCount = 0;
   
   setInterval(() => {
-    // Only run if market is open
-    if (!isMarketOpen()) {
-      return;
-    }
+    if (!isMarketOpen()) return;
     
     const now = new Date();
     const hour = now.getHours();
     const minute = now.getMinutes();
     const dayOfWeek = now.getDay();
     
-    // Generate daily articles at 10 AM and 2 PM on market days only
     const dailyTimes = [10, 14];
     if (dailyTimes.includes(hour) && minute === 0) {
       const today = now.toDateString();
       if (lastDailyGeneration !== today + hour) {
-        console.log(`⏰ Scheduled daily generation at ${hour}:00 (Market Open)`);
+        console.log(`⏰ Scheduled daily generation at ${hour}:00`);
         generateDailyArticles();
         lastDailyGeneration = today + hour;
       }
     }
     
-    // Generate evergreen articles on Monday and Thursday at 9 AM (market days)
     if ((dayOfWeek === 1 || dayOfWeek === 4) && hour === 9 && minute === 0) {
       const weekKey = `${now.getFullYear()}-W${Math.ceil(now.getDate() / 7)}-${dayOfWeek}`;
       if (evergreenCount !== weekKey) {
-        console.log(`⏰ Scheduled evergreen generation (Market Day)`);
+        console.log(`⏰ Scheduled evergreen generation`);
         generateEvergreenContent();
         evergreenCount = weekKey;
       }
@@ -520,16 +473,9 @@ function scheduleArticleGeneration() {
   }, 60000);
 }
 
-// API Endpoints
-
-// Get all blog articles
 app.get('/api/blog-articles', async (req, res) => {
   try {
-    const articles = await Article.find()
-      .sort({ publishedAt: -1 })
-      .limit(50)
-      .select('-content');
-    
+    const articles = await Article.find().sort({ publishedAt: -1 }).limit(50).select('-content');
     res.json({
       articles: articles.map(a => ({
         id: a._id,
@@ -546,47 +492,23 @@ app.get('/api/blog-articles', async (req, res) => {
       count: articles.length
     });
   } catch (error) {
-    console.error('Error fetching articles:', error);
     res.status(500).json({ error: 'Failed to fetch articles' });
   }
 });
 
-// Get single article by slug
 app.get('/api/blog-articles/:slug', async (req, res) => {
   try {
     const article = await Article.findOne({ slug: req.params.slug });
-    
-    if (!article) {
-      return res.status(404).json({ error: 'Article not found' });
-    }
-    
-    res.json({
-      id: article._id,
-      title: article.title,
-      slug: article.slug,
-      excerpt: article.excerpt,
-      content: article.content,
-      author: article.author,
-      category: article.category,
-      articleType: article.articleType,
-      image: article.image,
-      readTime: article.readTime,
-      keywords: article.keywords,
-      metaDescription: article.metaDescription,
-      publishedAt: article.publishedAt,
-      updatedAt: article.updatedAt
-    });
+    if (!article) return res.status(404).json({ error: 'Article not found' });
+    res.json(article);
   } catch (error) {
-    console.error('Error fetching article:', error);
     res.status(500).json({ error: 'Failed to fetch article' });
   }
 });
 
-// Manual trigger for article generation
 app.post('/api/generate-articles', async (req, res) => {
   try {
     const { type } = req.body;
-    
     if (type === 'evergreen') {
       await generateEvergreenContent();
       res.json({ success: true, message: 'Evergreen article generated' });
@@ -599,19 +521,16 @@ app.post('/api/generate-articles', async (req, res) => {
   }
 });
 
-// Top Gainers endpoint - UPDATES EVERY 12 MINUTES
 app.get('/api/top-gainers', async (req, res) => {
   try {
     const now = Date.now();
     
-    // Cache for 12 minutes (720,000 milliseconds)
     if (cachedMarketData.lastUpdated && (now - cachedMarketData.lastUpdated) < 12 * 60 * 1000) {
       console.log('📦 Returning cached gainers data');
       return res.json({
-        gainers: cachedMarketData.gainers.slice(0, 10),
+        gainers: cachedMarketData.gainers,
         lastUpdated: new Date(cachedMarketData.lastUpdated).toISOString(),
-        source: 'cache',
-        nextUpdate: new Date(cachedMarketData.lastUpdated + 12 * 60 * 1000).toISOString()
+        source: 'cache'
       });
     }
 
@@ -626,10 +545,9 @@ app.get('/api/top-gainers', async (req, res) => {
       };
 
       return res.json({
-        gainers: marketData.gainers.slice(0, 10),
+        gainers: marketData.gainers,
         lastUpdated: new Date(now).toISOString(),
-        source: 'live',
-        nextUpdate: new Date(now + 12 * 60 * 1000).toISOString()
+        source: 'live'
       });
     }
 
@@ -639,19 +557,16 @@ app.get('/api/top-gainers', async (req, res) => {
   }
 });
 
-// Top Losers endpoint - UPDATES EVERY 12 MINUTES
 app.get('/api/top-losers', async (req, res) => {
   try {
     const now = Date.now();
     
-    // Cache for 12 minutes (720,000 milliseconds)
     if (cachedMarketData.lastUpdated && (now - cachedMarketData.lastUpdated) < 12 * 60 * 1000) {
       console.log('📦 Returning cached losers data');
       return res.json({
-        losers: cachedMarketData.losers.slice(0, 10),
+        losers: cachedMarketData.losers,
         lastUpdated: new Date(cachedMarketData.lastUpdated).toISOString(),
-        source: 'cache',
-        nextUpdate: new Date(cachedMarketData.lastUpdated + 12 * 60 * 1000).toISOString()
+        source: 'cache'
       });
     }
 
@@ -666,10 +581,9 @@ app.get('/api/top-losers', async (req, res) => {
       };
 
       return res.json({
-        losers: marketData.losers.slice(0, 10),
+        losers: marketData.losers,
         lastUpdated: new Date(now).toISOString(),
-        source: 'live',
-        nextUpdate: new Date(now + 12 * 60 * 1000).toISOString()
+        source: 'live'
       });
     }
 
@@ -679,17 +593,13 @@ app.get('/api/top-losers', async (req, res) => {
   }
 });
 
-// Market Sentiment endpoint
 app.get('/api/market-sentiment', async (req, res) => {
   try {
-    const spyResponse = await fetch(
-      `https://finnhub.io/api/v1/quote?symbol=SPY&token=${FINNHUB_API_KEY}`
-    );
+    const spyResponse = await fetch(`https://finnhub.io/api/v1/quote?symbol=SPY&token=${FINNHUB_API_KEY}`);
     const spyData = await spyResponse.json();
 
     if (spyData && spyData.dp !== undefined) {
       const spyChange = spyData.dp;
-      
       let sentiment, color;
       if (spyChange > 1) {
         sentiment = 'Bullish';
@@ -702,12 +612,7 @@ app.get('/api/market-sentiment', async (req, res) => {
         color = 'orange';
       }
 
-      return res.json({
-        sentiment,
-        color,
-        spyChange: spyChange.toFixed(2),
-        spyPrice: spyData.c
-      });
+      return res.json({ sentiment, color, spyChange: spyChange.toFixed(2), spyPrice: spyData.c });
     }
 
     res.status(500).json({ error: 'Unable to fetch SPY' });
@@ -716,21 +621,19 @@ app.get('/api/market-sentiment', async (req, res) => {
   }
 });
 
-// Health check
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
     mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
     cacheStatus: cachedMarketData.lastUpdated ? 'Active' : 'Empty',
-    cacheAge: cachedMarketData.lastUpdated ? `${Math.floor((Date.now() - cachedMarketData.lastUpdated) / 60000)} minutes` : 'N/A',
     marketStatus: isMarketOpen() ? 'Open' : 'Closed'
   });
 });
 
 app.get('/', (req, res) => {
   res.json({
-    message: 'Stock Market API v5.1 - Real-Time AI Blog',
+    message: 'Stock Market API v5.1 - Real-Time Market Movers',
     endpoints: {
       health: '/health',
       topGainers: '/api/top-gainers',
@@ -739,41 +642,34 @@ app.get('/', (req, res) => {
       blogArticles: '/api/blog-articles',
       singleArticle: '/api/blog-articles/:slug',
       generateArticles: 'POST /api/generate-articles'
-    },
-    dataRefresh: 'Every 12 minutes'
+    }
   });
 });
 
-// Generate initial articles on startup
 setTimeout(async () => {
   const articleCount = await Article.countDocuments();
   if (articleCount === 0) {
-    console.log('🚀 No articles found - generating initial content...');
+    console.log('🚀 Generating initial content...');
     await generateDailyArticles();
     await generateEvergreenContent();
   } else {
-    console.log(`📚 Found ${articleCount} existing articles in database`);
+    console.log(`📚 Found ${articleCount} existing articles`);
   }
 }, 10000);
 
-// Start scheduler
 scheduleArticleGeneration();
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('🚀 Stock Market API v5.1 - REAL-TIME EDITION');
+  console.log('🚀 Stock Market API v5.1 - REAL-TIME MOVERS');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log(`📡 Port: ${PORT}`);
-  console.log('📊 Market Coverage: ALL NYSE/NASDAQ stocks');
-  console.log('🤖 AI Blog Generation: ENABLED');
+  console.log('📊 Data Source: Finviz (Top 5 gainers/losers, 500k+ volume)');
+  console.log('🤖 AI Blog: "Stock Market Today" focused articles');
   console.log('📝 Daily articles: 2x daily (10AM, 2PM) - Market Days Only');
   console.log('📚 Evergreen articles: 2x weekly (Mon & Thu, 9AM)');
-  console.log('💾 Storage: MongoDB (permanent)');
-  console.log('🔍 SEO: Optimized for search + LLM indexing');
-  console.log('💰 Cashtags: $TICKER format for clickable stocks');
-  console.log('🖼️  Images: 100+ rotating stock market photos');
-  console.log('🔄 Data Updates: Every 12 minutes (LIVE)');
+  console.log('🔄 Data Updates: Every 12 minutes');
   console.log(`📅 Market Status: ${isMarketOpen() ? 'OPEN' : 'CLOSED'}`);
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 });
