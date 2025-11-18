@@ -73,8 +73,8 @@ function isMarketOpen() {
 }
 
 mongoose.connect(MONGODB_URI)
-.then(() => console.log('? MongoDB connected successfully'))
-.catch(err => console.error('? MongoDB connection error:', err));
+.then(() => console.log('✅ MongoDB connected successfully'))
+.catch(err => console.error('❌ MongoDB connection error:', err));
 
 const articleSchema = new mongoose.Schema({
   title: { type: String, required: true },
@@ -127,21 +127,21 @@ function generateChartData(changePercent) {
 // Fetch market movers from Finviz (scraping)
 async function fetchMarketMovers() {
   try {
-    console.log('? Scraping Finviz for real-time top movers...');
+    console.log('📊 Scraping Finviz for real-time top movers...');
     
     const headers = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     };
     
     const gainersUrl = 'https://finviz.com/screener.ashx?v=111&f=sh_curvol_o500&ft=4&o=-change';
-    console.log('? Fetching gainers from Finviz...');
+    console.log('🔍 Fetching gainers from Finviz...');
     const gainersResponse = await fetch(gainersUrl, { headers });
     const gainersHtml = await gainersResponse.text();
     
     await new Promise(resolve => setTimeout(resolve, 2000));
     
     const losersUrl = 'https://finviz.com/screener.ashx?v=111&f=sh_curvol_o500&ft=4&o=change';
-    console.log('? Fetching losers from Finviz...');
+    console.log('🔍 Fetching losers from Finviz...');
     const losersResponse = await fetch(losersUrl, { headers });
     const losersHtml = await losersResponse.text();
     
@@ -211,8 +211,8 @@ async function fetchMarketMovers() {
     const topGainers = gainers.slice(0, 5);
     const topLosers = losers.slice(0, 5);
     
-    console.log(`? Scraped ${topGainers.length} top gainers from Finviz`);
-    console.log(`? Scraped ${topLosers.length} top losers from Finviz`);
+    console.log(`🚀 Scraped ${topGainers.length} top gainers from Finviz`);
+    console.log(`📉 Scraped ${topLosers.length} top losers from Finviz`);
     
     if (topGainers.length > 0) {
       console.log(`   #1 Gainer: ${topGainers[0].ticker} +${topGainers[0].change.toFixed(2)}%`);
@@ -227,7 +227,7 @@ async function fetchMarketMovers() {
     };
     
   } catch (error) {
-    console.error('? Error scraping Finviz:', error.message);
+    console.error('💥 Error scraping Finviz:', error.message);
     return { gainers: [], losers: [] };
   }
 }
@@ -240,6 +240,38 @@ function extractStockTickers(text) {
   const tickerRegex = /\$([A-Z]{2,5})\b/g;
   const matches = text.match(tickerRegex) || [];
   return [...new Set(matches.map(m => m.replace('$', '')))];
+}
+
+// Sync subscriber to SendGrid Contacts
+async function syncToSendGridContacts(subscriber) {
+  try {
+    const contactData = {
+      contacts: [
+        {
+          email: subscriber.email
+        }
+      ]
+    };
+
+    const response = await fetch('https://api.sendgrid.com/v3/marketing/contacts', {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${SENDGRID_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(contactData)
+    });
+
+    const result = await response.json();
+    
+    if (response.ok) {
+      console.log(`📬 Synced to SendGrid Contacts: ${subscriber.email}`);
+    } else {
+      console.error(`⚠️ SendGrid sync failed:`, result);
+    }
+  } catch (error) {
+    console.error('SendGrid contact sync error:', error.message);
+  }
 }
 
 // EMAIL TEMPLATE
@@ -263,7 +295,7 @@ function createDailyEmailTemplate(data) {
           <!-- Header -->
           <tr>
             <td style="background: linear-gradient(135deg, #FF8C00 0%, #FF6B00 100%); padding: 30px; text-align: center;">
-              <h1 style="color: #ffffff; font-size: 32px; font-weight: 900; margin: 0 0 10px 0;">? STOCK MARKET TODAY</h1>
+              <h1 style="color: #ffffff; font-size: 32px; font-weight: 900; margin: 0 0 10px 0;">📈 STOCK MARKET TODAY</h1>
               <p style="color: #ffffff; font-size: 16px; margin: 0; opacity: 0.9;">Your Daily Market Recap</p>
             </td>
           </tr>
@@ -286,7 +318,7 @@ function createDailyEmailTemplate(data) {
           <!-- Top Gainers -->
           <tr>
             <td style="padding: 0 30px 30px 30px;">
-              <h3 style="color: #10B981; font-size: 20px; font-weight: 900; margin: 0 0 15px 0;">? TOP GAINERS</h3>
+              <h3 style="color: #10B981; font-size: 20px; font-weight: 900; margin: 0 0 15px 0;">🚀 TOP GAINERS</h3>
               ${gainers.slice(0, 3).map(stock => `
                 <table width="100%" cellpadding="0" cellspacing="0" style="background: rgba(17, 24, 39, 0.5); border: 2px solid rgba(55, 65, 81, 1); border-radius: 12px; margin-bottom: 12px; padding: 15px;">
                   <tr>
@@ -307,7 +339,7 @@ function createDailyEmailTemplate(data) {
           <!-- Top Losers -->
           <tr>
             <td style="padding: 0 30px 30px 30px;">
-              <h3 style="color: #EF4444; font-size: 20px; font-weight: 900; margin: 0 0 15px 0;">? TOP LOSERS</h3>
+              <h3 style="color: #EF4444; font-size: 20px; font-weight: 900; margin: 0 0 15px 0;">📉 TOP LOSERS</h3>
               ${losers.slice(0, 3).map(stock => `
                 <table width="100%" cellpadding="0" cellspacing="0" style="background: rgba(17, 24, 39, 0.5); border: 2px solid rgba(55, 65, 81, 1); border-radius: 12px; margin-bottom: 12px; padding: 15px;">
                   <tr>
@@ -329,14 +361,14 @@ function createDailyEmailTemplate(data) {
           ${articles && articles.length > 0 ? `
           <tr>
             <td style="padding: 0 30px 30px 30px;">
-              <h3 style="color: #FF8C00; font-size: 20px; font-weight: 900; margin: 0 0 15px 0;">? LATEST ARTICLES</h3>
+              <h3 style="color: #FF8C00; font-size: 20px; font-weight: 900; margin: 0 0 15px 0;">📰 LATEST ARTICLES</h3>
               ${articles.slice(0, 2).map(article => `
                 <table width="100%" cellpadding="0" cellspacing="0" style="background: rgba(17, 24, 39, 0.5); border: 2px solid rgba(55, 65, 81, 1); border-radius: 12px; margin-bottom: 12px; padding: 15px;">
                   <tr>
                     <td>
                       <p style="color: #ffffff; font-size: 16px; font-weight: 700; margin: 0 0 8px 0;">${article.title}</p>
                       <p style="color: #9CA3AF; font-size: 14px; margin: 0 0 12px 0;">${article.excerpt.substring(0, 100)}...</p>
-                      <a href="https://stockmarkettoday.com/blog/${article.slug}" style="display: inline-block; background: #FF8C00; color: #ffffff; text-decoration: none; padding: 10px 20px; border-radius: 8px; font-weight: 700; font-size: 14px;">Read More ?</a>
+                      <a href="https://stockmarkettoday.com/blog/${article.slug}" style="display: inline-block; background: #FF8C00; color: #ffffff; text-decoration: none; padding: 10px 20px; border-radius: 8px; font-weight: 700; font-size: 14px;">Read More →</a>
                     </td>
                   </tr>
                 </table>
@@ -353,7 +385,7 @@ function createDailyEmailTemplate(data) {
                   <td>
                     <p style="color: #ffffff; font-size: 20px; font-weight: 900; margin: 0 0 10px 0;">Never Miss a Big Move!</p>
                     <p style="color: #ffffff; font-size: 14px; margin: 0 0 20px 0; opacity: 0.9;">Get instant SMS alerts when stocks explode</p>
-                    <a href="https://stockmarkettoday.com/sign-up" style="display: inline-block; background: #ffffff; color: #FF8C00; text-decoration: none; padding: 14px 30px; border-radius: 10px; font-weight: 900; font-size: 16px;">Get Free Alerts ?</a>
+                    <a href="https://stockmarkettoday.com/sign-up" style="display: inline-block; background: #ffffff; color: #FF8C00; text-decoration: none; padding: 14px 30px; border-radius: 10px; font-weight: 900; font-size: 16px;">Get Free Alerts →</a>
                   </td>
                 </tr>
               </table>
@@ -364,7 +396,7 @@ function createDailyEmailTemplate(data) {
           <tr>
             <td style="padding: 30px; text-align: center; border-top: 1px solid rgba(55, 65, 81, 1);">
               <p style="color: #9CA3AF; font-size: 12px; margin: 0 0 10px 0;">
-                � 2025 StockMarketToday.com | Market Intelligence Platform
+                © 2025 StockMarketToday.com | Market Intelligence Platform
               </p>
               <p style="color: #6B7280; font-size: 11px; margin: 0 0 15px 0;">
                 This is not financial advice. Trade at your own risk.
@@ -386,18 +418,18 @@ function createDailyEmailTemplate(data) {
 // SEND DAILY EMAIL TO ALL SUBSCRIBERS
 async function sendDailyEmails() {
   try {
-    console.log('? Sending daily emails to subscribers...');
+    console.log('📧 Sending daily emails to subscribers...');
     
     const subscribers = await Subscriber.find({ subscribed: true });
     
     if (subscribers.length === 0) {
-      console.log('?? No active subscribers to email');
+      console.log('⚠️ No active subscribers to email');
       return;
     }
 
     const marketData = await fetchMarketMovers();
     if (!marketData || marketData.gainers.length === 0) {
-      console.log('?? No market data available for email');
+      console.log('⚠️ No market data available for email');
       return;
     }
 
@@ -431,7 +463,7 @@ async function sendDailyEmails() {
           email: SENDGRID_FROM_EMAIL,
           name: 'Stock Market Today'
         },
-        subject: `? Market Recap: ${sentiment.text} Day | Top Movers Inside`,
+        subject: `📈 Market Recap: ${sentiment.text} Day | Top Movers Inside`,
         html: emailHtml,
         trackingSettings: {
           clickTracking: { enable: true },
@@ -445,7 +477,7 @@ async function sendDailyEmails() {
       try {
         await sgMail.send(messages);
         sentCount += batch.length;
-        console.log(`? Sent ${batch.length} emails (${sentCount}/${subscribers.length})`);
+        console.log(`✅ Sent ${batch.length} emails (${sentCount}/${subscribers.length})`);
         
         await Subscriber.updateMany(
           { _id: { $in: batch.map(s => s._id) } },
@@ -460,7 +492,7 @@ async function sendDailyEmails() {
       }
     }
 
-    console.log(`? Daily emails sent to ${sentCount} subscribers`);
+    console.log(`✅ Daily emails sent to ${sentCount} subscribers`);
     
   } catch (error) {
     console.error('Error in sendDailyEmails:', error);
@@ -469,7 +501,7 @@ async function sendDailyEmails() {
 
 async function generateDailyArticles() {
   try {
-    console.log('? Generating daily market articles...');
+    console.log('🤖 Generating daily market articles...');
     
     const marketData = await fetchMarketMovers();
     if (!marketData || marketData.gainers.length === 0) {
@@ -518,8 +550,8 @@ async function generateDailyArticles() {
       recentlyMentionedStocks = recentlyMentionedStocks.slice(-20);
     }
     
-    console.log('? Daily articles generation complete');
-    console.log(`? Recently mentioned stocks: ${recentlyMentionedStocks.join(', ')}`);
+    console.log('✅ Daily articles generation complete');
+    console.log(`📝 Recently mentioned stocks: ${recentlyMentionedStocks.join(', ')}`);
   } catch (error) {
     console.error('Error generating daily articles:', error);
   }
@@ -729,11 +761,11 @@ async function saveArticle(articleData) {
   try {
     const article = new Article(articleData);
     await article.save();
-    console.log(`? Saved article: "${articleData.title}"`);
+    console.log(`✅ Saved article: "${articleData.title}"`);
     return article;
   } catch (error) {
     if (error.code === 11000) {
-      console.log(`?? Article already exists`);
+      console.log(`⚠️ Article already exists`);
     } else {
       console.error('Error saving article:', error);
     }
@@ -743,11 +775,11 @@ async function saveArticle(articleData) {
 
 async function generateEvergreenContent() {
   try {
-    console.log('? Generating evergreen article...');
+    console.log('📚 Generating evergreen article...');
     const article = await generateEvergreenArticle();
     if (article) {
       await saveArticle(article);
-      console.log('? Evergreen article generated');
+      console.log('✅ Evergreen article generated');
     }
   } catch (error) {
     console.error('Error generating evergreen article:', error);
@@ -771,7 +803,7 @@ function scheduleArticleGeneration() {
     if (dailyTimes.includes(hour) && minute === 0) {
       const today = now.toDateString();
       if (lastDailyGeneration !== today + hour) {
-        console.log(`? Scheduled daily generation at ${hour}:00`);
+        console.log(`⏰ Scheduled daily generation at ${hour}:00`);
         generateDailyArticles();
         lastDailyGeneration = today + hour;
       }
@@ -780,7 +812,7 @@ function scheduleArticleGeneration() {
     if (hour === 17 && minute === 0) {
       const today = now.toDateString();
       if (lastEmailSent !== today) {
-        console.log(`? Scheduled daily email at 5:00 PM`);
+        console.log(`⏰ Scheduled daily email at 5:00 PM`);
         sendDailyEmails();
         lastEmailSent = today;
       }
@@ -789,7 +821,7 @@ function scheduleArticleGeneration() {
     if ((dayOfWeek === 1 || dayOfWeek === 4) && hour === 9 && minute === 0) {
       const weekKey = `${now.getFullYear()}-W${Math.ceil(now.getDate() / 7)}-${dayOfWeek}`;
       if (evergreenCount !== weekKey) {
-        console.log(`? Scheduled evergreen generation`);
+        console.log(`⏰ Scheduled evergreen generation`);
         generateEvergreenContent();
         evergreenCount = weekKey;
       }
@@ -867,6 +899,10 @@ app.post('/api/signup', async (req, res) => {
         subscriber.subscribed = true;
         subscriber.subscribedAt = new Date();
         await subscriber.save();
+        
+        // Sync to SendGrid
+        syncToSendGridContacts(subscriber);
+        
         return res.json({ success: true, message: 'Re-subscribed successfully' });
       }
       return res.json({ success: true, message: 'Already subscribed' });
@@ -880,7 +916,10 @@ app.post('/api/signup', async (req, res) => {
     });
     
     await subscriber.save();
-    console.log(`? New subscriber: ${email}`);
+    console.log(`✅ New subscriber: ${email}`);
+    
+    // Sync to SendGrid Contacts (non-blocking)
+    syncToSendGridContacts(subscriber);
     
     res.json({ success: true, message: 'Subscribed successfully' });
   } catch (error) {
@@ -898,7 +937,7 @@ app.post('/api/unsubscribe', async (req, res) => {
       subscriber.subscribed = false;
       subscriber.unsubscribedAt = new Date();
       await subscriber.save();
-      console.log(`? Unsubscribed: ${email}`);
+      console.log(`❌ Unsubscribed: ${email}`);
     }
     
     res.json({ success: true, message: 'Unsubscribed successfully' });
@@ -907,12 +946,44 @@ app.post('/api/unsubscribe', async (req, res) => {
   }
 });
 
+// Test SendGrid Contact Sync
+app.get('/api/test-sendgrid-sync', async (req, res) => {
+  try {
+    const testContact = {
+      contacts: [
+        {
+          email: 'test@example.com'
+        }
+      ]
+    };
+
+    const response = await fetch('https://api.sendgrid.com/v3/marketing/contacts', {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${SENDGRID_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(testContact)
+    });
+
+    const result = await response.json();
+    
+    res.json({
+      statusCode: response.status,
+      success: response.ok,
+      result: result
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/top-gainers', async (req, res) => {
   try {
     const now = Date.now();
     
     if (cachedMarketData.lastUpdated && (now - cachedMarketData.lastUpdated) < 12 * 60 * 1000) {
-      console.log('? Returning cached gainers data');
+      console.log('📦 Returning cached gainers data');
       return res.json({
         gainers: cachedMarketData.gainers,
         lastUpdated: new Date(cachedMarketData.lastUpdated).toISOString(),
@@ -920,7 +991,7 @@ app.get('/api/top-gainers', async (req, res) => {
       });
     }
 
-    console.log('? Fetching fresh gainers data...');
+    console.log('🔄 Fetching fresh gainers data...');
     const marketData = await fetchMarketMovers();
     
     if (marketData && marketData.gainers.length > 0) {
@@ -948,7 +1019,7 @@ app.get('/api/top-losers', async (req, res) => {
     const now = Date.now();
     
     if (cachedMarketData.lastUpdated && (now - cachedMarketData.lastUpdated) < 12 * 60 * 1000) {
-      console.log('? Returning cached losers data');
+      console.log('📦 Returning cached losers data');
       return res.json({
         losers: cachedMarketData.losers,
         lastUpdated: new Date(cachedMarketData.lastUpdated).toISOString(),
@@ -956,7 +1027,7 @@ app.get('/api/top-losers', async (req, res) => {
       });
     }
 
-    console.log('? Fetching fresh losers data...');
+    console.log('🔄 Fetching fresh losers data...');
     const marketData = await fetchMarketMovers();
     
     if (marketData && marketData.losers.length > 0) {
@@ -1032,7 +1103,8 @@ app.get('/', (req, res) => {
       signup: 'POST /api/signup',
       unsubscribe: 'POST /api/unsubscribe',
       generateArticles: 'POST /api/generate-articles',
-      sendDailyEmails: 'POST /api/send-daily-emails'
+      sendDailyEmails: 'POST /api/send-daily-emails',
+      testSendGridSync: '/api/test-sendgrid-sync'
     }
   });
 });
@@ -1041,11 +1113,11 @@ setTimeout(async () => {
   const articleCount = await Article.countDocuments();
   const subscriberCount = await Subscriber.countDocuments({ subscribed: true });
   
-  console.log(`? Found ${articleCount} existing articles`);
-  console.log(`? Found ${subscriberCount} active subscribers`);
+  console.log(`📚 Found ${articleCount} existing articles`);
+  console.log(`📧 Found ${subscriberCount} active subscribers`);
   
   if (articleCount === 0) {
-    console.log('? Generating initial content...');
+    console.log('🚀 Generating initial content...');
     await generateDailyArticles();
     await generateEvergreenContent();
   }
@@ -1055,18 +1127,18 @@ scheduleArticleGeneration();
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log('????????????????????????????????????????????');
-  console.log('? Stock Market API v6.0 - EMAIL AUTOMATION');
-  console.log('????????????????????????????????????????????');
-  console.log(`? Port: ${PORT}`);
-  console.log('? Data: Finviz scraping (Top 5 each, 500k+ vol)');
-  console.log('? AI Blog: AGGRESSIVE SEO + Duplicate Prevention');
-  console.log('? Daily Emails: 5 PM ET (after market close)');
-  console.log('? Daily articles: 2x daily (10AM, 2PM)');
-  console.log('? Data Updates: Every 12 minutes');
-  console.log(`? Market Status: ${isMarketOpen() ? 'OPEN' : 'CLOSED'}`);
-  console.log(`? SendGrid: ${SENDGRID_API_KEY ? 'CONFIGURED ?' : 'NOT CONFIGURED ?'}`);
-  console.log('????????????????????????????????????????????');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('🚀 Stock Market API v6.0 - EMAIL AUTOMATION');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log(`📡 Port: ${PORT}`);
+  console.log('📊 Data: Finviz scraping (Top 5 each, 500k+ vol)');
+  console.log('🤖 AI Blog: AGGRESSIVE SEO + Duplicate Prevention');
+  console.log('📧 Daily Emails: 5 PM ET (after market close)');
+  console.log('📝 Daily articles: 2x daily (10AM, 2PM)');
+  console.log('🔄 Data Updates: Every 12 minutes');
+  console.log(`📅 Market Status: ${isMarketOpen() ? 'OPEN' : 'CLOSED'}`);
+  console.log(`📬 SendGrid: ${SENDGRID_API_KEY ? 'CONFIGURED ✅' : 'NOT CONFIGURED ❌'}`);
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 });
 
 module.exports = app;
